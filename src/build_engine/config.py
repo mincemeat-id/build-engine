@@ -11,6 +11,7 @@ DEFAULT_CONFIG_PATH = Path("/etc/mincemeat/build-engine/config.toml")
 DEFAULT_CREDENTIALS_PATH = Path("/etc/mincemeat/build-engine/credentials.toml")
 DEFAULT_CERT_PATH = Path("/etc/mincemeat/build-engine/engine.crt")
 DEFAULT_KEY_PATH = Path("/etc/mincemeat/build-engine/engine.key")
+DEFAULT_STATE_DIR = Path("/var/lib/build-engine")
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +50,7 @@ class EngineConfig:
     credentials_path: Path = DEFAULT_CREDENTIALS_PATH
     cert_path: Path = DEFAULT_CERT_PATH
     key_path: Path = DEFAULT_KEY_PATH
+    state_dir: Path = DEFAULT_STATE_DIR
     image_manifest_version: str = "1.0.0"
     images: tuple[str, ...] = ("node:20", "node:22", "bun:1", "hugo:latest")
     proto_version: int = 1
@@ -105,6 +107,7 @@ def load_config(
     values["credentials_path"] = _path_value(values["credentials_path"])
     values["cert_path"] = _path_value(values["cert_path"])
     values["key_path"] = _path_value(values["key_path"])
+    values["state_dir"] = _path_value(values["state_dir"])
     if isinstance(values.get("images"), list):
         values["images"] = tuple(str(item) for item in values["images"])
     elif isinstance(values.get("images"), str):
@@ -195,6 +198,7 @@ def _config_defaults() -> dict[str, Any]:
         "credentials_path": DEFAULT_CREDENTIALS_PATH,
         "cert_path": DEFAULT_CERT_PATH,
         "key_path": DEFAULT_KEY_PATH,
+        "state_dir": DEFAULT_STATE_DIR,
         "image_manifest_version": "1.0.0",
         "images": ("node:20", "node:22", "bun:1", "hugo:latest"),
         "proto_version": 1,
@@ -235,7 +239,7 @@ def _coerce_env_value(key: str, value: str) -> object:
         return float(value)
     if key == "images":
         return tuple(part.strip() for part in value.split(",") if part.strip())
-    if key.endswith("_path"):
+    if key.endswith("_path") or key.endswith("_dir"):
         return Path(value)
     return value
 

@@ -5,9 +5,9 @@ coreapp. The engine connects outbound to coreapp over WSS, receives build
 attempts, executes them in curated Docker builder images, streams status/logs,
 and uploads staged artifacts back to the platform.
 
-This repository has completed Stage 1: config, registration, and auth. The
-uplink, durable queue, executor, cache, metrics, and packaging operations still
-land in later stages.
+This repository has completed Stage 2: config, registration/auth, and the
+agent WSS uplink protocol. The durable queue, executor, cache, metrics, and
+packaging operations still land in later stages.
 
 ## Quick Start
 
@@ -81,8 +81,8 @@ build-engine drain
 ```
 
 Registration, credential validation, certificate/key generation, backend TLS
-fingerprint pinning, and session refresh are implemented. Uplink, queueing,
-executor, cache, metrics, and full diagnostics land in later stages.
+fingerprint pinning, session refresh, and the WSS uplink are implemented.
+Queueing, executor, cache, metrics, and full diagnostics land in later stages.
 
 ## Compatibility Matrix
 

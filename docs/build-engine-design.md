@@ -491,13 +491,13 @@ Estimate: 4-6 days. Complexity: L.
 
 Estimate: 1-1.5 weeks. Complexity: L.
 
-- [ ] Implement WSS connect/reconnect/backoff.
-- [ ] Implement protocol envelope validation.
-- [ ] Implement hello/welcome negotiation.
-- [ ] Implement heartbeat loop.
-- [ ] Implement event spool and replay from `last_seq`.
-- [ ] Implement command handlers for assign/cancel/drain/cache reset.
-- [ ] Add protocol tests with a mock backend.
+- [x] Implement WSS connect/reconnect/backoff.
+- [x] Implement protocol envelope validation.
+- [x] Implement hello/welcome negotiation.
+- [x] Implement heartbeat loop.
+- [x] Implement event spool and replay from `last_seq`.
+- [x] Implement command handlers for assign/cancel/drain/cache reset.
+- [x] Add protocol tests with a mock backend.
 
 ### Stage 3 - Durable Queue
 

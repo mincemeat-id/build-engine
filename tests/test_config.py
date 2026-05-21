@@ -60,9 +60,11 @@ def test_config_capabilities_match_openapi_contract(tmp_path: Path) -> None:
             "max_concurrency": 2,
             "images": ("node:22", "hugo:latest"),
             "image_manifest_version": "1.2.3",
+            "state_dir": tmp_path / "state",
         },
     )
 
+    assert config.state_dir == tmp_path / "state"
     assert config_capabilities(config) == {
         "os": "linux",
         "arch": "amd64",

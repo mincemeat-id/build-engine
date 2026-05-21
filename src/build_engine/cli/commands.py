@@ -1,6 +1,7 @@
 """Bootstrap CLI commands for the build engine."""
 
 import argparse
+import asyncio
 import json
 import sys
 from collections.abc import Sequence
@@ -12,6 +13,7 @@ from build_engine.agent.auth import (
     register_engine,
     validate_credentials_file,
 )
+from build_engine.agent.uplink import BuildEngineUplink
 from build_engine.config import DEFAULTS, load_config
 
 
@@ -89,7 +91,19 @@ def _help(args: argparse.Namespace) -> int:
 
 def _serve(args: argparse.Namespace) -> int:
     config = load_config(config_path=args.config, credentials_path=args.credentials)
-    print(f"serve scaffold ready; config={args.config} max_concurrency={config.max_concurrency}")
+    try:
+        credentials = validate_credentials_file(config.credentials_path)
+    except (AuthError, ValueError, FileNotFoundError) as exc:
+        print(f"serve failed: not registered ({exc})", file=sys.stderr)
+        return 1
+    print(
+        "build-engine serve: starting uplink "
+        f"engine_id={credentials.engine_id} max_concurrency={config.max_concurrency}",
+    )
+    try:
+        asyncio.run(BuildEngineUplink(config, credentials).run_forever())
+    except KeyboardInterrupt:
+        print("build-engine serve: stopped")
     return 0
 
 

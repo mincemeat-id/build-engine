@@ -38,3 +38,22 @@ def test_doctor_json_reports_missing_credentials(
     payload = json.loads(captured.out)
     assert payload["protocol_version"] == 1
     assert payload["status"] == "error"
+
+
+def test_serve_reports_missing_credentials(
+    capsys: CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    exit_code = main(
+        [
+            "serve",
+            "--config",
+            str(tmp_path / "missing.toml"),
+            "--credentials",
+            str(tmp_path / "credentials.toml"),
+        ]
+    )
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "not registered" in captured.err
