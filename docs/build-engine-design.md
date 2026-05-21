@@ -503,12 +503,12 @@ Estimate: 1-1.5 weeks. Complexity: L.
 
 Estimate: 4-6 days. Complexity: M.
 
-- [ ] Implement SQLite WAL schema migrations.
-- [ ] Implement enqueue idempotency by `(build_job_id, attempt_id)`.
-- [ ] Implement lease acquisition and refresh.
-- [ ] Implement event outbox.
-- [ ] Implement DLQ behavior.
-- [ ] Add crash/restart tests.
+- [x] Implement SQLite WAL schema migrations.
+- [x] Implement enqueue idempotency by `(build_job_id, attempt_id)`.
+- [x] Implement lease acquisition and refresh.
+- [x] Implement event outbox.
+- [x] Implement DLQ behavior.
+- [x] Add crash/restart tests.
 
 ### Stage 4 - Detection And Planning
 

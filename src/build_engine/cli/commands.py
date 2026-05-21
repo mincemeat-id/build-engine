@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import shutil
 import sys
 from collections.abc import Sequence
 
@@ -13,8 +14,11 @@ from build_engine.agent.auth import (
     register_engine,
     validate_credentials_file,
 )
+from build_engine.agent.heartbeat import HeartbeatSnapshot
 from build_engine.agent.uplink import BuildEngineUplink
 from build_engine.config import DEFAULTS, load_config
+from build_engine.queue.handlers import SQLiteCommandHandlers
+from build_engine.queue.store import SQLiteEventOutbox, SQLiteQueueStore
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -100,8 +104,29 @@ def _serve(args: argparse.Namespace) -> int:
         "build-engine serve: starting uplink "
         f"engine_id={credentials.engine_id} max_concurrency={config.max_concurrency}",
     )
+    store = SQLiteQueueStore(config.state_dir / "queue.sqlite")
+    store.initialize()
+
+    def heartbeat_snapshot() -> HeartbeatSnapshot:
+        disk = shutil.disk_usage(config.state_dir)
+        return HeartbeatSnapshot(
+            workers_busy=0,
+            workers_total=config.max_concurrency,
+            queue_depth=store.queue_depth(),
+            cache_size_bytes=0,
+            disk_free_bytes=disk.free,
+        )
+
     try:
-        asyncio.run(BuildEngineUplink(config, credentials).run_forever())
+        asyncio.run(
+            BuildEngineUplink(
+                config,
+                credentials,
+                event_spool=SQLiteEventOutbox(store),
+                command_handlers=SQLiteCommandHandlers(store),
+                heartbeat_provider=heartbeat_snapshot,
+            ).run_forever()
+        )
     except KeyboardInterrupt:
         print("build-engine serve: stopped")
     return 0

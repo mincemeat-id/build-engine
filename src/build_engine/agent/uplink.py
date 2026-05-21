@@ -51,6 +51,19 @@ type Connector = Callable[
 type HeartbeatProvider = Callable[[], HeartbeatSnapshot]
 
 
+class EventSpoolLike(Protocol):
+    """Outbound event persistence used by reconnect replay."""
+
+    async def append(self, envelope: Envelope) -> None:
+        """Persist one outbound attempt event."""
+
+    async def replay_after(self, cursors: Mapping[str, int]) -> list[Envelope]:
+        """Return events newer than backend cursors."""
+
+    async def next_seq(self, attempt_id: str) -> int:
+        """Return the next sequence number for an attempt."""
+
+
 @dataclass(frozen=True, slots=True)
 class BackoffPolicy:
     """Exponential reconnect delays for the persistent uplink."""
@@ -192,7 +205,7 @@ class BuildEngineUplink:
         config: EngineConfig,
         credentials: EngineCredentials,
         *,
-        event_spool: EventSpool | None = None,
+        event_spool: EventSpoolLike | None = None,
         command_handlers: CommandHandlers | None = None,
         heartbeat_provider: HeartbeatProvider | None = None,
         connector: Connector | None = None,
