@@ -1,7 +1,7 @@
 # Build Engine Images Repository Design
 
 > **Repository:** `mincemeat-id/build-engine-images`
-> **Status:** Final implementation plan.
+> **Status:** Design and decision documentation.
 > **Audience:** Platform maintainers, build-engine maintainers, security
 > reviewers.
 
@@ -53,7 +53,7 @@ build-engine-images/
 
 ## Image Matrix
 
-V1 GA images:
+Supported images:
 
 | Logical Image | GHCR Tag Pattern | Purpose |
 |---------------|------------------|---------|
@@ -61,18 +61,12 @@ V1 GA images:
 | `node:22` | `ghcr.io/mincemeat-id/build-engine-images/node:22-X.Y.Z` | Default Node image. |
 | `bun:1` | `ghcr.io/mincemeat-id/build-engine-images/bun:1-X.Y.Z` | Bun package manager/runtime. |
 | `hugo:latest` | `ghcr.io/mincemeat-id/build-engine-images/hugo:X.Y.Z` | Hugo static builds. |
+| `zola:latest` | `ghcr.io/mincemeat-id/build-engine-images/zola:X.Y.Z` | Zola static builds. |
 
-V1.x candidates:
-
-| Logical Image | Condition To Ship |
-|---------------|-------------------|
-| `zola:latest` | Zola fixture, docs, image size review, and smoke pass. |
-| `node-angular:22` or `node:22` reuse | Angular static fixture and output detection pass. |
-| `node-remix:22` or `node:22` reuse | Remix SPA fixture and SSR rejection fixture pass. |
-
-The default should be image reuse where practical. Add framework-specific
-images only when a framework needs extra native dependencies or the generic
-Node image becomes too large.
+The default is image reuse where practical. Framework-specific images are only
+added when a framework needs extra native dependencies or the generic Node
+image would become too large. Angular static and Remix SPA build with the
+existing Node 22 image.
 
 ## Base Image Policy
 
@@ -162,7 +156,7 @@ Rules:
 
 ## Framework Acceptance Matrix
 
-V1 GA:
+Supported frameworks:
 
 | Framework | Image | Fixture | Expected Output |
 |-----------|-------|---------|-----------------|
@@ -174,9 +168,12 @@ V1 GA:
 | VuePress | `node:22` | `vuepress-docs` | `dist/` |
 | Gatsby | `node:22` | `gatsby-blog` | `public/` |
 | Hugo | `hugo:latest` | `hugo-quickstart` | `public/` |
+| Zola | `zola:latest` | `zola-quickstart` | `public/` |
 | Next.js export | `node:22` | `nextjs-export` | `out/` |
 | Nuxt generate | `node:22` | `nuxt-generate` | `.output/public/` |
 | SvelteKit static | `node:22` | `sveltekit-static` | `build/` |
+| Angular static | `node:22` | `angular-static` | `dist/<project>/browser/` |
+| Remix SPA | `node:22` | `remix-spa` | `build/client/` |
 | Generic | `node:22` | `generic-static` | inferred |
 
 Negative fixtures:
@@ -185,11 +182,9 @@ Negative fixtures:
 |---------|-----------------|
 | `nextjs-noexport` | `BUILD_INCOMPATIBLE`, code `NEXTJS_REQUIRES_EXPORT`. |
 | `remix-ssr` | `BUILD_INCOMPATIBLE`, code `REMIX_REQUIRES_SPA_MODE`. |
+| `angular-ssr` | `BUILD_INCOMPATIBLE`, code `ANGULAR_REQUIRES_STATIC_OUTPUT`. |
 | `sveltekit-node-adapter` | `BUILD_INCOMPATIBLE`, code `SVELTEKIT_REQUIRES_STATIC_ADAPTER`. |
 | `nuxt-ssr-build` | `BUILD_INCOMPATIBLE`, code `NUXT_REQUIRES_GENERATE`. |
-
-V1.x candidates must add both positive and negative fixtures before being
-marked GA.
 
 ## Security And Supply Chain
 
@@ -247,106 +242,3 @@ Rollback:
 - Revert manifest bump in `build-engine`.
 - Redeploy engine with previous accepted manifest.
 - Do not mutate existing image tags.
-
-## Implementation Plan
-
-### Stage 0 - Scaffold
-
-Estimate: 1-2 days. Complexity: S.
-
-- [ ] Create repo structure.
-- [ ] Add initial README and manifest schema.
-- [ ] Add `.editorconfig`, linting for shell/Dockerfiles if available.
-- [ ] Add CI skeleton.
-- [ ] Add GHCR package naming conventions.
-
-### Stage 1 - Entrypoint Contract
-
-Estimate: 2-3 days. Complexity: M.
-
-- [ ] Implement `/build-entrypoint.sh`.
-- [ ] Add manifest parsing.
-- [ ] Add package-manager cache path setup.
-- [ ] Add install command dispatch for npm, pnpm, yarn, bun.
-- [ ] Add build command execution.
-- [ ] Add output copy to `/workspace/out`.
-- [ ] Add shell tests for malformed manifests and missing output dirs.
-
-### Stage 2 - V1 GA Images
-
-Estimate: 4-6 days. Complexity: L.
-
-- [ ] Build `node:20` Dockerfile.
-- [ ] Build `node:22` Dockerfile.
-- [ ] Build `bun:1` Dockerfile.
-- [ ] Build `hugo:latest` Dockerfile.
-- [ ] Pin base image digests.
-- [ ] Enable Corepack in Node images.
-- [ ] Add common native build dependencies only where needed.
-- [ ] Keep image size report in CI.
-
-### Stage 3 - Fixtures And Smoke Tests
-
-Estimate: 1-1.5 weeks. Complexity: L.
-
-- [ ] Add positive fixtures for every v1 GA framework.
-- [ ] Add negative fixtures for config-dependent frameworks.
-- [ ] Add cold build smoke script.
-- [ ] Add warm-cache smoke script.
-- [ ] Assert output contains `index.html`.
-- [ ] Assert expected log breadcrumbs.
-- [ ] Produce fixture timing report.
-
-### Stage 4 - Manifest And Compatibility
-
-Estimate: 2-3 days. Complexity: M.
-
-- [ ] Define JSON schema for `manifest.json`.
-- [ ] Generate manifest from built image digests.
-- [ ] Validate manifest in CI.
-- [ ] Add `engine_compat` metadata.
-- [ ] Add release notes template with compatibility matrix.
-
-### Stage 5 - Security Pipeline
-
-Estimate: 3-5 days. Complexity: M.
-
-- [ ] Add Trivy scan workflow.
-- [ ] Enforce CVE budget.
-- [ ] Add CycloneDX SBOM generation.
-- [ ] Add cosign keyless signing.
-- [ ] Add provenance generation.
-- [ ] Add weekly rebuild/rescan cron.
-- [ ] Add security exception documentation process.
-
-### Stage 6 - Publication And Rollback
-
-Estimate: 2-3 days. Complexity: M.
-
-- [ ] Add RC publication on merge.
-- [ ] Add stable publication on release.
-- [ ] Enforce immutable tags.
-- [ ] Add manifest-publish workflow.
-- [ ] Add automated PR to `build-engine` for manifest bumps.
-- [ ] Document rollback.
-
-### Stage 7 - V1.x Candidate Evaluation
-
-Estimate: 1-2 weeks after v1 GA. Complexity: M.
-
-- [ ] Add Zola Dockerfile or reuse strategy.
-- [ ] Add Zola positive fixture.
-- [ ] Add Angular static positive/negative fixtures.
-- [ ] Add Remix SPA positive and Remix SSR negative fixtures.
-- [ ] Decide whether framework-specific images are needed.
-- [ ] Promote candidates only after fixture, docs, scan, and size gates pass.
-
-## Acceptance Criteria
-
-- Every v1 GA image builds reproducibly in CI.
-- Every released image has digest, SBOM, provenance, and cosign signature.
-- `manifest.json` contains only digest-pinned published images.
-- Fixture smoke tests pass for all v1 GA frameworks.
-- Critical/high vulnerability gate blocks publication as defined.
-- No secrets appear in image layers or repo scan.
-- Build-engine can pull every manifest image by digest.

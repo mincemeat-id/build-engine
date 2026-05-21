@@ -1,7 +1,7 @@
 # Build Engine Coreapp Design
 
 > **Repository:** `mincemeat-id/coreapp`
-> **Status:** Final implementation plan.
+> **Status:** Design and decision documentation.
 > **Audience:** Backend, worker, shared models, frontend, platform operators.
 
 Coreapp owns build-engine registration, dispatch, audit, retention, pipeline
@@ -32,7 +32,7 @@ artifacts, and user-visible deployment status.
 | Artifact/log staging | Use a platform-owned staging bucket/prefix. |
 | TLS termination | Dedicated agent hostname through Traefik/Nginx, not CDN-proxied. Forward verified peer certificate/fingerprint to FastAPI. |
 | Multi-replica routing | Redis engine command fanout: `build-engine:commands:{engine_id}`. |
-| Framework v1 GA | Astro, Vite, Eleventy, Docusaurus, VitePress, VuePress, Gatsby, Hugo, Next.js export, Nuxt generate, SvelteKit static, Generic. |
+| Framework v1 GA | Astro, Vite, Eleventy, Docusaurus, VitePress, VuePress, Gatsby, Hugo, Zola, Next.js export, Nuxt generate, SvelteKit static, Angular static, Remix SPA, Generic. |
 | Network controls | Record policy in job payload; engine enforces egress blocks. |
 | Deployment source | Keep `Deployment.source = GITHUB`; add build metadata. |
 | Historical pipelines | Do not backfill `BUILD`. |
@@ -297,160 +297,3 @@ Site-owner pages:
 
 Frontend must render both historical six-stage pipelines and new seven-stage
 pipelines.
-
-## Implementation Plan
-
-### Stage 0 - Contract Lock
-
-Estimate: 2-3 days. Complexity: M.
-
-- [x] Confirm OpenAPI request/response schemas for admin, site-owner, and
-  agent endpoints.
-- [x] Confirm Redis command fanout message shape.
-- [x] Confirm staging bucket naming and lifecycle policy.
-- [x] Confirm generated frontend type names and route structure.
-- [x] Add ADRs for queueing semantics, staging storage, agent TLS, and
-  attempt-scoped idempotency.
-
-Stage 0 lock artifacts:
-
-- OpenAPI-only contract module:
-  `backend/src/app/contracts/build_engine.py` and
-  `backend/src/app/contracts/build_engine_paths.py`.
-- Frontend contract aliases: `frontend/src/schemas/buildEngine.ts`.
-- Redis fanout, staging lifecycle, generated type names, and route names:
-  `docs/build-engine/contract-lock.md`.
-- ADRs: `docs/adr/0001-build-engine-queueing-semantics.md`,
-  `docs/adr/0002-build-engine-staging-storage.md`,
-  `docs/adr/0003-build-engine-agent-tls.md`,
-  `docs/adr/0004-build-engine-attempt-idempotency.md`.
-
-### Stage 1 - Shared Models And Migration
-
-Estimate: 3-5 days. Complexity: L.
-
-- [x] Add SQLAlchemy enums/models for build engines, tokens, jobs, attempts,
-  events, metrics, config, and secrets.
-- [x] Add `PipelineStageName.BUILD`.
-- [x] Add BUILD log pointer columns to `PipelineStage`.
-- [x] Add Alembic revision with indexes, FKs, and dialect-aware enum handling.
-- [x] Update model exports and repository/unit-of-work bindings.
-- [x] Add model and migration tests.
-
-### Stage 2 - Backend Services
-
-Estimate: 1.5-2 weeks. Complexity: XL.
-
-- [x] Implement build-engine registration token service.
-- [x] Implement cert fingerprint validation helpers.
-- [x] Implement engine session JWT service.
-- [x] Implement dispatcher with round-robin, saturation queue, timeout, and
-  Redis command fanout.
-- [x] Implement event ingestion with attempt-scoped monotonic sequence checks.
-- [x] Implement staging artifact/log presign and validation metadata.
-- [x] Implement heartbeat watcher and engine-lost attempt recovery.
-- [x] Implement metrics rollup persistence and pruning.
-- [x] Implement cache reset/drain/disable command publishing.
-- [x] Implement audit log entries for all state-changing actions.
-
-### Stage 3 - API Endpoints And Contracts
-
-Estimate: 1-1.5 weeks. Complexity: L.
-
-- [x] Add admin routers and RBAC checks.
-- [x] Add site-owner build config/secrets/cache routers.
-- [x] Add agent register/session/heartbeat/ws/artifact/ack/metrics routers.
-- [x] Add `GET` logs behavior for external BUILD logs.
-- [x] Regenerate OpenAPI contracts.
-- [x] Add contract drift tests.
-- [x] Add API tests for authorization, validation, idempotency, and stale
-  attempts.
-
-### Stage 4 - Worker Pipeline Changes
-
-Estimate: 1.5-2 weeks. Complexity: XL.
-
-- [x] Add `BUILD` to pipeline creation for new pipelines.
-- [x] Add `stage_build`.
-- [x] Split `VALIDATE` into source classification and no-build publish
-  validation.
-- [x] Add build project detection in worker or shared detection module.
-- [x] Add build artifact download and validation to `UPLOAD`.
-- [x] Preserve current no-build behavior.
-- [x] Add cancellation propagation to queued and running build attempts.
-- [x] Extend retention pruning to delete staged build artifacts/logs.
-- [x] Add pipeline tests for no-build, build success, incompatible config,
-  no engines, saturated timeout, cancellation, and engine lost.
-
-### Stage 5 - Frontend
-
-Estimate: 1.5-2 weeks. Complexity: L.
-
-- [x] Generate TypeScript client/types.
-- [x] Add Pinia stores for build engines/jobs/config/secrets.
-- [x] Build admin engine list/register/detail/jobs views.
-- [x] Build global build-job history.
-- [x] Build site Build settings tab.
-- [x] Build build-secret editor with write-only value behavior.
-- [x] Update pipeline detail for six/seven-stage timelines.
-- [x] Add live BUILD log, waiting state, cache info, and attempt history.
-- [x] Add frontend tests for routes, forms, permissions, and pipeline rendering.
-
-### Stage 6 - Integration And Operations
-
-Estimate: 1-2 weeks. Complexity: L.
-
-- [x] Configure dedicated agent hostname in local/staging.
-- [x] Add staging storage bucket/prefix config.
-- [x] Add dashboard/alerts for offline engines and queue saturation.
-- [x] Add runbook docs under `docs/static-sites/`.
-- [x] Run local end-to-end with a mock engine.
-- [ ] Run staging end-to-end with real engine and Astro/Vite.
-- [x] Run failure drills: engine lost, stale attempt, cache reset, storage
-  outage, saturated queue timeout.
-
-### Stage 7 - Final Verification
-
-Estimate: 2-3 days. Complexity: M.
-
-- [x] Run targeted backend/worker/frontend tests during iteration.
-- [x] Run `npm run contracts:check`.
-- [x] Run `make verify`.
-- [ ] Confirm staging smoke for no-build and build pipelines.
-- [x] Confirm docs and deployment runbooks are updated.
-
-Stage 7 verification notes:
-
-- 2026-05-20: Targeted backend/shared/worker tests passed:
-  `backend/tests/unit/test_build_engine_contract_openapi.py`,
-  `backend/tests/unit/db/test_build_engine_migration_contract.py`,
-  `backend/tests/unit/services/test_build_engine_service.py`,
-  `shared/tests/unit/models/test_build_engine_models.py`,
-  `shared/tests/unit/models/test_enum_contracts.py`,
-  `worker/tests/unit/services/test_pipeline_runner.py`, and
-  `worker/tests/unit/actors/test_pipeline_actor.py`.
-- 2026-05-20: Targeted frontend tests passed:
-  `src/stores/buildEngines.test.ts`,
-  `src/views/sites/PipelineDetailView.test.ts`, and
-  `src/schemas/staticSite.test.ts`.
-- 2026-05-20: `npm run contracts:check` passed with no generated OpenAPI
-  drift.
-- 2026-05-20: `make verify` passed.
-- 2026-05-20: Documentation and runbook coverage confirmed in
-  `docs/build-engine/README.md`,
-  `docs/build-engine/contract-lock.md`, ADRs 0001-0004, and
-  `docs/static-sites/build-engine-operations.md`.
-
-## Acceptance Criteria
-
-- No-build GitHub deployments remain unchanged except for a skipped `BUILD`
-  stage on new pipelines.
-- Buildable Astro and Vite sites deploy end-to-end through the engine.
-- `NO_ENGINE_AVAILABLE` is immediate only when no compatible online engine
-  exists.
-- Saturated engines queue and surface `WAITING_FOR_ENGINE`.
-- Stale attempts cannot transition jobs or overwrite artifacts.
-- Full BUILD logs remain available after live Redis tail expires.
-- Admin can register, drain, disable, inspect, and reset cache on engines.
-- Site owners can configure build settings and write-only secrets.
-- `make verify` passes before declaring coreapp work complete.

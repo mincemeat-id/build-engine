@@ -1,7 +1,7 @@
 # Build Engine Repository Design
 
 > **Repository:** `mincemeat-id/build-engine`
-> **Status:** Final implementation plan.
+> **Status:** Design and decision documentation.
 > **Audience:** Build-engine maintainers, backend integrators, platform
 > operators.
 
@@ -323,7 +323,7 @@ Rules:
 
 ## Framework Detection
 
-V1 GA profiles:
+Supported framework profiles:
 
 | Framework | Build | Output |
 |-----------|-------|--------|
@@ -335,16 +335,13 @@ V1 GA profiles:
 | VuePress | package script | `dist` |
 | Gatsby | package script / `gatsby build` | `public` |
 | Hugo | `hugo` | `public` |
+| Zola | `zola build` | `public` |
 | Next.js static export | `next build` | `out` |
 | Nuxt generate | `nuxi generate` | `.output/public` |
 | SvelteKit static | package script | `build` |
+| Angular static | `ng build --configuration production` | `dist/<project>/browser/` |
+| Remix SPA | package script | `build/client/` |
 | Generic | `<pm> run build` | inferred |
-
-V1.x candidates after fixtures/docs/images:
-
-- Zola
-- Angular static
-- Remix SPA mode
 
 Generic output inference order:
 
@@ -462,121 +459,3 @@ PrivateTmp=yes
 [Install]
 WantedBy=multi-user.target
 ```
-
-## Implementation Plan
-
-### Stage 0 - Contract And Scaffold
-
-Estimate: 3-4 days. Complexity: M.
-
-- [x] Create repo with `uv`, Ruff, ty, pytest, pre-commit.
-- [x] Add package skeleton and CLI entrypoint.
-- [x] Import protocol/OpenAPI/image manifest contracts from coreapp docs.
-- [x] Add CI for lint, type-check, tests, and binary build smoke.
-- [x] Add initial README and compatibility matrix.
-
-### Stage 1 - Config, Registration, Auth
-
-Estimate: 4-6 days. Complexity: L.
-
-- [x] Implement config layering.
-- [x] Implement cert/key generation and filesystem permissions.
-- [x] Implement `register` command.
-- [x] Implement backend TLS fingerprint pinning.
-- [x] Implement session JWT mint/refresh.
-- [x] Implement credential validation.
-- [x] Add unit tests for auth and config.
-
-### Stage 2 - Uplink Protocol
-
-Estimate: 1-1.5 weeks. Complexity: L.
-
-- [x] Implement WSS connect/reconnect/backoff.
-- [x] Implement protocol envelope validation.
-- [x] Implement hello/welcome negotiation.
-- [x] Implement heartbeat loop.
-- [x] Implement event spool and replay from `last_seq`.
-- [x] Implement command handlers for assign/cancel/drain/cache reset.
-- [x] Add protocol tests with a mock backend.
-
-### Stage 3 - Durable Queue
-
-Estimate: 4-6 days. Complexity: M.
-
-- [x] Implement SQLite WAL schema migrations.
-- [x] Implement enqueue idempotency by `(build_job_id, attempt_id)`.
-- [x] Implement lease acquisition and refresh.
-- [x] Implement event outbox.
-- [x] Implement DLQ behavior.
-- [x] Add crash/restart tests.
-
-### Stage 4 - Detection And Planning
-
-Estimate: 1 week. Complexity: L.
-
-- [x] Implement package manager detection.
-- [x] Implement Node version selection.
-- [x] Implement v1 GA framework profiles.
-- [x] Implement static compatibility checks and guidance payloads.
-- [x] Implement Generic output inference.
-- [x] Add fixture tests for each GA profile.
-
-### Stage 5 - Docker Executor
-
-Estimate: 1.5-2 weeks. Complexity: XL.
-
-- [x] Implement source download, sha256 verification, safe extract.
-- [x] Implement workspace setup and cleanup.
-- [x] Implement image pull by manifest.
-- [x] Implement container run with resource limits and hardening.
-- [x] Implement network guard setup and fail-closed behavior.
-- [x] Implement stdout/stderr streaming with redaction.
-- [x] Implement timeout/cancel SIGTERM->SIGKILL.
-- [x] Implement output validation and artifact packaging.
-- [x] Implement presigned upload flow.
-- [x] Add integration tests with Docker.
-
-### Stage 6 - Cache And Metrics
-
-Estimate: 4-6 days. Complexity: M.
-
-- [x] Implement per-site PM cache mount mapping.
-- [x] Implement lockfile hash invalidation.
-- [x] Implement TTL/LRU pruning.
-- [x] Implement cache reset command.
-- [x] Implement metrics collector/reporter.
-- [x] Add cache and metrics tests.
-
-### Stage 7 - Doctor, Packaging, Operations
-
-Estimate: 1 week. Complexity: L.
-
-- [x] Implement `doctor` human output.
-- [x] Implement `doctor --json`.
-- [x] Add systemd unit and install script.
-- [x] Add PyInstaller spec and hidden imports.
-- [x] Add release artifact signing/checksum.
-- [x] Add host setup docs and troubleshooting.
-- [x] Run install/upgrade/drain smoke on Ubuntu 24.04.
-
-### Stage 8 - End-to-End Hardening
-
-Estimate: 1-2 weeks. Complexity: XL.
-
-- [x] Run Astro/Vite end-to-end against local coreapp.
-- [x] Run all v1 GA framework fixtures.
-- [x] Run cancellation, timeout, OOM, engine-lost, stale-attempt, backend
-  reconnect, storage failure, and cache reset drills.
-- [x] Tune log/event throughput and frame limits.
-- [x] Verify binary startup, memory, disk, and cleanup behavior.
-
-## Acceptance Criteria
-
-- Engine can register, reconnect, heartbeat, and show `ONLINE`.
-- Duplicate `job.assign` for the same attempt is idempotent.
-- Stale attempts cannot report success for current jobs.
-- Docker builds run without Docker socket mount and with network guards.
-- Astro and Vite complete end-to-end under limits.
-- All v1 GA fixture builds pass cold/warm acceptance.
-- `doctor` detects common operator failures.
-- PyInstaller binary runs on Ubuntu 24.04 and 26.04.
