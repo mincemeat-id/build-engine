@@ -8,7 +8,9 @@ license = "AGPL-3.0-or-later"
 authors = [
   { name = "Mincemeat maintainers" },
 ]
-dependencies = []
+dependencies = [
+  "cryptography>=46.0.0",
+]
 
 [project.scripts]
 build-engine = "build_engine.main:main"

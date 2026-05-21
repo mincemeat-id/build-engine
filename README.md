@@ -5,9 +5,9 @@ coreapp. The engine connects outbound to coreapp over WSS, receives build
 attempts, executes them in curated Docker builder images, streams status/logs,
 and uploads staged artifacts back to the platform.
 
-This repository is currently at Stage 0: contract and scaffold. Runtime
-behavior is intentionally skeletal; the shape, tooling, contracts, and binary
-smoke path are in place for the implementation stages that follow.
+This repository has completed Stage 1: config, registration, and auth. The
+uplink, durable queue, executor, cache, metrics, and packaging operations still
+land in later stages.
 
 ## Quick Start
 
@@ -75,12 +75,14 @@ build-engine serve
 build-engine register --backend-url https://agent.mincemeat.id --token TOKEN --name ENGINE
 build-engine status
 build-engine doctor --json
+build-engine session refresh
 build-engine cache reset --site-id SITE_ID
 build-engine drain
 ```
 
-Only scaffold behavior exists in Stage 0. Config, registration, auth, uplink,
-queueing, executor, cache, metrics, and full diagnostics land in later stages.
+Registration, credential validation, certificate/key generation, backend TLS
+fingerprint pinning, and session refresh are implemented. Uplink, queueing,
+executor, cache, metrics, and full diagnostics land in later stages.
 
 ## Compatibility Matrix
 

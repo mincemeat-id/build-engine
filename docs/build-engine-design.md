@@ -479,13 +479,13 @@ Estimate: 3-4 days. Complexity: M.
 
 Estimate: 4-6 days. Complexity: L.
 
-- [ ] Implement config layering.
-- [ ] Implement cert/key generation and filesystem permissions.
-- [ ] Implement `register` command.
-- [ ] Implement backend TLS fingerprint pinning.
-- [ ] Implement session JWT mint/refresh.
-- [ ] Implement credential validation.
-- [ ] Add unit tests for auth and config.
+- [x] Implement config layering.
+- [x] Implement cert/key generation and filesystem permissions.
+- [x] Implement `register` command.
+- [x] Implement backend TLS fingerprint pinning.
+- [x] Implement session JWT mint/refresh.
+- [x] Implement credential validation.
+- [x] Add unit tests for auth and config.
 
 ### Stage 2 - Uplink Protocol
 
