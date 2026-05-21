@@ -1,0 +1,9 @@
+{
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "generate": "nuxi generate"
+  },
+  "dependencies": {
+    "nuxt": "^4.0.0"
+  }
+}

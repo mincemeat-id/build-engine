@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "build": "docusaurus build"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.0.0"
+  }
+}

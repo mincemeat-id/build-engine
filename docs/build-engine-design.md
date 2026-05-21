@@ -514,12 +514,12 @@ Estimate: 4-6 days. Complexity: M.
 
 Estimate: 1 week. Complexity: L.
 
-- [ ] Implement package manager detection.
-- [ ] Implement Node version selection.
-- [ ] Implement v1 GA framework profiles.
-- [ ] Implement static compatibility checks and guidance payloads.
-- [ ] Implement Generic output inference.
-- [ ] Add fixture tests for each GA profile.
+- [x] Implement package manager detection.
+- [x] Implement Node version selection.
+- [x] Implement v1 GA framework profiles.
+- [x] Implement static compatibility checks and guidance payloads.
+- [x] Implement Generic output inference.
+- [x] Add fixture tests for each GA profile.
 
 ### Stage 5 - Docker Executor
 
