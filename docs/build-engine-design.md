@@ -540,12 +540,12 @@ Estimate: 1.5-2 weeks. Complexity: XL.
 
 Estimate: 4-6 days. Complexity: M.
 
-- [ ] Implement per-site PM cache mount mapping.
-- [ ] Implement lockfile hash invalidation.
-- [ ] Implement TTL/LRU pruning.
-- [ ] Implement cache reset command.
-- [ ] Implement metrics collector/reporter.
-- [ ] Add cache and metrics tests.
+- [x] Implement per-site PM cache mount mapping.
+- [x] Implement lockfile hash invalidation.
+- [x] Implement TTL/LRU pruning.
+- [x] Implement cache reset command.
+- [x] Implement metrics collector/reporter.
+- [x] Add cache and metrics tests.
 
 ### Stage 7 - Doctor, Packaging, Operations
 

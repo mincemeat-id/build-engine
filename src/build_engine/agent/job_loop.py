@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -10,7 +11,7 @@ from typing import Any, Protocol
 from build_engine.config import EngineConfig, EngineCredentials
 from build_engine.detect.framework import DetectionError, plan_build
 from build_engine.executor.artifact import ArtifactError, ArtifactUploadClient, package_output
-from build_engine.executor.cache import site_cache
+from build_engine.executor.cache import CacheError, prepare_site_cache, prune_cache
 from build_engine.executor.docker_runner import (
     DockerError,
     DockerRunSpec,
@@ -28,6 +29,7 @@ from build_engine.executor.workspace import (
     extract_source,
     resolve_project_root,
 )
+from build_engine.metrics.collector import MetricsCollector
 from build_engine.queue.dlq import record_executor_crash
 from build_engine.queue.leases import acquire_queue_lease
 from build_engine.queue.store import JobRecord, SQLiteQueueStore
@@ -76,6 +78,7 @@ async def run_worker_pool(
     config: EngineConfig,
     credentials: EngineCredentials,
     options: JobLoopOptions | None = None,
+    metrics: MetricsCollector | None = None,
 ) -> None:
     """Run queue workers until cancelled."""
 
@@ -89,6 +92,7 @@ async def run_worker_pool(
                 credentials=credentials,
                 owner=f"worker-{index}",
                 options=selected_options,
+                metrics=metrics,
             )
         )
         for index in range(config.max_concurrency)
@@ -104,6 +108,7 @@ async def _worker(
     credentials: EngineCredentials,
     owner: str,
     options: JobLoopOptions,
+    metrics: MetricsCollector | None = None,
     sleep: Sleep = asyncio.sleep,
 ) -> None:
     while True:
@@ -116,6 +121,9 @@ async def _worker(
             await sleep(options.idle_sleep_seconds)
             continue
         store.transition(attempt_id=lease.job.attempt_id, state="RUNNING")
+        if metrics is not None:
+            metrics.job_started()
+        completed = False
         try:
             await execute_job(
                 lease.job,
@@ -124,8 +132,11 @@ async def _worker(
                 config=config,
                 credentials=credentials,
                 options=options,
+                metrics=metrics,
             )
+            completed = True
         except BuildExecutionError as exc:
+            completed = True
             store.transition(attempt_id=lease.job.attempt_id, state="FAILED", error=exc.message)
             await _publish_error(publisher, lease.job, exc)
             await _ack(
@@ -142,6 +153,7 @@ async def _worker(
                 attempt_id=lease.job.attempt_id,
                 error=str(exc),
             )
+            completed = dead_lettered
             if dead_lettered:
                 await _ack(
                     publisher,
@@ -151,6 +163,9 @@ async def _worker(
                     error_code="EXECUTOR_CRASH",
                     error_message=str(exc),
                 )
+        finally:
+            if metrics is not None:
+                metrics.job_finished(completed=completed)
 
 
 async def execute_job(
@@ -161,6 +176,7 @@ async def execute_job(
     config: EngineConfig,
     credentials: EngineCredentials,
     options: JobLoopOptions | None = None,
+    metrics: MetricsCollector | None = None,
 ) -> None:
     """Execute one leased build attempt end to end."""
 
@@ -168,6 +184,7 @@ async def execute_job(
     workspace = create_workspace(config.state_dir, job.attempt_id)
     retain_failed = False
     cancel_monitor: asyncio.Task[None] | None = None
+    job_started_at = time.perf_counter()
     try:
         await _status(publisher, job, "PREPARING")
         payload = job.payload
@@ -194,17 +211,42 @@ async def execute_job(
 
         image = _resolve_builder_image(plan.image, payload)
         await _status(publisher, job, "PULLING_IMAGE", {"image": image})
+        image_pull_started_at = time.perf_counter()
         await asyncio.to_thread(pull_image, image)
+        await _metric(
+            publisher,
+            job,
+            "docker.image_pull_seconds",
+            time.perf_counter() - image_pull_started_at,
+        )
         network_guard = await asyncio.to_thread(ensure_network_guard)
         cancel_event = asyncio.Event()
         cancel_monitor = asyncio.create_task(_monitor_cancel(store, job, cancel_event))
         command = _combined_command(plan.install_command, plan.build_command)
-        cache_mounts = site_cache(
+        await asyncio.to_thread(
+            prune_cache,
             config.state_dir,
-            _required_str(payload, "site_id"),
-            plan.package_manager,
-        ).mounts()
+            site_max_bytes=config.cache_site_max_bytes,
+            ttl_days=config.cache_ttl_days,
+        )
+        cache = prepare_site_cache(
+            state_dir=config.state_dir,
+            site_id=_required_str(payload, "site_id"),
+            package_manager=plan.package_manager,
+            project_root=project_root,
+            enabled=_cache_enabled(payload),
+        )
+        if metrics is not None:
+            metrics.cache_event(cache.event)
+        if cache.event is not None:
+            await publisher.publish_attempt_event(
+                "cache.event",
+                {"build_job_id": job.build_job_id, "event": cache.event},
+                build_job_id=job.build_job_id,
+                attempt_id=job.attempt_id,
+            )
         await _status(publisher, job, "BUILDING", plan.to_job_payload_fields())
+        build_started_at = time.perf_counter()
         result = await run_container(
             DockerRunSpec(
                 image=image,
@@ -212,12 +254,13 @@ async def execute_job(
                 command=command,
                 config=config,
                 network_guard=network_guard,
-                cache_mounts=cache_mounts,
+                cache_mounts=cache.mounts,
                 secrets=_secret_values(payload),
             ),
             publish_log=lambda stream, data: _log(publisher, job, stream, data),
             cancel_event=cancel_event,
         )
+        await _metric(publisher, job, "build.seconds", time.perf_counter() - build_started_at)
         if result.cancelled:
             raise BuildExecutionError("CANCELLED", "CANCELLED", "Build was cancelled")
         if result.timed_out:
@@ -230,6 +273,7 @@ async def execute_job(
             )
 
         await _status(publisher, job, "PACKAGING")
+        package_started_at = time.perf_counter()
         artifact = await asyncio.to_thread(
             package_output,
             project_root=project_root,
@@ -237,6 +281,8 @@ async def execute_job(
             destination=workspace.artifact_dir / "artifact.tar.gz",
             max_bytes=config.artifact_max_bytes,
         )
+        await _metric(publisher, job, "package.seconds", time.perf_counter() - package_started_at)
+        await _metric(publisher, job, "artifact.bytes", artifact.size_bytes)
         await publisher.publish_attempt_event(
             "artifact.ready",
             {"sha256": artifact.sha256, "size_bytes": artifact.size_bytes},
@@ -261,13 +307,24 @@ async def execute_job(
             attempt_id=job.attempt_id,
             artifact=artifact,
         )
+        upload_started_at = time.perf_counter()
         await asyncio.to_thread(upload_client.upload, ticket, artifact)
+        await _metric(publisher, job, "upload.seconds", time.perf_counter() - upload_started_at)
         store.transition(attempt_id=job.attempt_id, state="SUCCEEDED")
+        await _metric(publisher, job, "jobs.duration_seconds", time.perf_counter() - job_started_at)
         await _ack(publisher, job, state="SUCCEEDED")
     except (ArtifactError, DetectionError, WorkspaceError) as exc:
         retain_failed = True
         raise BuildExecutionError("USER_CONFIG_INVALID", type(exc).__name__, str(exc)) from exc
-    except (DockerError, NetworkGuardError) as exc:
+    except CacheError as exc:
+        retain_failed = True
+        raise BuildExecutionError("EXEC_INFRA", type(exc).__name__, str(exc)) from exc
+    except DockerError as exc:
+        if metrics is not None:
+            metrics.docker_error()
+        retain_failed = True
+        raise BuildExecutionError("EXEC_INFRA", type(exc).__name__, str(exc)) from exc
+    except NetworkGuardError as exc:
         retain_failed = True
         raise BuildExecutionError("EXEC_INFRA", type(exc).__name__, str(exc)) from exc
     finally:
@@ -314,6 +371,20 @@ async def _log(publisher: EventPublisher, job: JobRecord, stream: str, data: str
     await publisher.publish_attempt_event(
         "log",
         {"stream": stream, "data": data},
+        build_job_id=job.build_job_id,
+        attempt_id=job.attempt_id,
+    )
+
+
+async def _metric(
+    publisher: EventPublisher,
+    job: JobRecord,
+    name: str,
+    value: float | int,
+) -> None:
+    await publisher.publish_attempt_event(
+        "metric",
+        {"name": name, "value": value},
         build_job_id=job.build_job_id,
         attempt_id=job.attempt_id,
     )
@@ -382,6 +453,16 @@ def _secret_values(payload: dict[str, Any]) -> tuple[str, ...]:
     if not isinstance(raw, dict):
         return ()
     return tuple(str(value) for value in raw.values() if isinstance(value, str) and value)
+
+
+def _cache_enabled(payload: dict[str, Any]) -> bool:
+    for key in ("cache_enabled", "build_cache_enabled"):
+        value = payload.get(key)
+        if isinstance(value, bool):
+            return value
+        if value is not None:
+            raise WorkspaceError(f"payload {key} must be a boolean")
+    return True
 
 
 def _required_str(payload: dict[str, Any], key: str) -> str:

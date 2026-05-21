@@ -27,6 +27,7 @@ from build_engine.agent.protocol import (
     new_envelope,
 )
 from build_engine.config import EngineConfig, EngineCredentials, config_capabilities
+from build_engine.metrics.collector import MetricsCollector
 
 AGENT_WS_PATH = "/api/v1/build-engines/agent/ws"
 
@@ -208,6 +209,7 @@ class BuildEngineUplink:
         event_spool: EventSpoolLike | None = None,
         command_handlers: CommandHandlers | None = None,
         heartbeat_provider: HeartbeatProvider | None = None,
+        metrics: MetricsCollector | None = None,
         connector: Connector | None = None,
         backoff: BackoffPolicy | None = None,
     ) -> None:
@@ -215,6 +217,7 @@ class BuildEngineUplink:
         self.credentials = credentials
         self.event_spool = event_spool or EventSpool(config.state_dir / "uplink-events.jsonl")
         self.command_handlers = command_handlers or InMemoryCommandHandlers()
+        self.metrics = metrics
         self.heartbeat_provider = heartbeat_provider or (
             lambda: idle_heartbeat(workers_total=config.max_concurrency)
         )
@@ -236,6 +239,8 @@ class BuildEngineUplink:
                 raise
             except Exception:
                 failures += 1
+                if self.metrics is not None:
+                    self.metrics.uplink_reconnect()
                 await self._sleep_backoff(failures)
             else:
                 failures = 0

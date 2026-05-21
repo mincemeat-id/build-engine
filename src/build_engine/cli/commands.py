@@ -18,7 +18,9 @@ from build_engine.agent.heartbeat import HeartbeatSnapshot
 from build_engine.agent.job_loop import run_worker_pool
 from build_engine.agent.uplink import BuildEngineUplink
 from build_engine.config import DEFAULTS, EngineConfig, EngineCredentials, load_config
-from build_engine.executor.cache import reset_cache
+from build_engine.executor.cache import cache_size_bytes, reset_cache
+from build_engine.metrics.collector import MetricsCollector
+from build_engine.metrics.reporter import run_metrics_reporter
 from build_engine.queue.handlers import SQLiteCommandHandlers
 from build_engine.queue.store import SQLiteEventOutbox, SQLiteQueueStore
 
@@ -110,19 +112,18 @@ def _serve(args: argparse.Namespace) -> int:
     )
     store = SQLiteQueueStore(config.state_dir / "queue.sqlite")
     store.initialize()
+    metrics = MetricsCollector(workers_total=config.max_concurrency)
 
     def heartbeat_snapshot() -> HeartbeatSnapshot:
         disk = shutil.disk_usage(config.state_dir)
-        return HeartbeatSnapshot(
-            workers_busy=0,
-            workers_total=config.max_concurrency,
+        snapshot = metrics.snapshot(
             queue_depth=store.queue_depth(),
-            cache_size_bytes=0,
-            disk_free_bytes=disk.free,
+            cache_size_bytes=cache_size_bytes(config.state_dir),
         )
+        return snapshot.to_heartbeat(disk_free_bytes=disk.free)
 
     try:
-        asyncio.run(_run_service(config, credentials, store, heartbeat_snapshot))
+        asyncio.run(_run_service(config, credentials, store, heartbeat_snapshot, metrics))
     except KeyboardInterrupt:
         print("build-engine serve: stopped")
     return 0
@@ -232,6 +233,7 @@ async def _run_service(
     credentials: EngineCredentials,
     store: SQLiteQueueStore,
     heartbeat_snapshot: Callable[[], HeartbeatSnapshot],
+    metrics: MetricsCollector,
 ) -> None:
     uplink = BuildEngineUplink(
         config,
@@ -239,6 +241,7 @@ async def _run_service(
         event_spool=SQLiteEventOutbox(store),
         command_handlers=SQLiteCommandHandlers(store),
         heartbeat_provider=heartbeat_snapshot,
+        metrics=metrics,
     )
     worker_task = asyncio.create_task(
         run_worker_pool(
@@ -246,10 +249,20 @@ async def _run_service(
             publisher=uplink,
             config=config,
             credentials=credentials,
+            metrics=metrics,
+        )
+    )
+    metrics_task = asyncio.create_task(
+        run_metrics_reporter(
+            config=config,
+            credentials=credentials,
+            store=store,
+            collector=metrics,
         )
     )
     try:
         await uplink.run_forever()
     finally:
         worker_task.cancel()
-        await asyncio.gather(worker_task, return_exceptions=True)
+        metrics_task.cancel()
+        await asyncio.gather(worker_task, metrics_task, return_exceptions=True)
