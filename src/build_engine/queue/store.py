@@ -1,0 +1,1 @@
+"""SQLite queue store placeholder."""

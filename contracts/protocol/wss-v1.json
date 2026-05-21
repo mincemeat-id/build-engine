@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mincemeat.id/contracts/build-engine/wss-v1.json",
+  "title": "Mincemeat Build Engine WSS Envelope V1",
+  "type": "object",
+  "required": ["v", "id", "type", "ts", "payload"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "type": "string", "minLength": 1 },
+    "type": {
+      "type": "string",
+      "enum": [
+        "welcome",
+        "job.assign",
+        "cancel",
+        "cache.reset",
+        "drain",
+        "ping",
+        "hello",
+        "job.ack",
+        "status",
+        "log",
+        "metric",
+        "artifact.ready",
+        "cache.event",
+        "error",
+        "heartbeat",
+        "pong"
+      ]
+    },
+    "ts": { "type": "string", "format": "date-time" },
+    "payload": { "type": "object" },
+    "build_job_id": { "type": "string", "format": "uuid" },
+    "attempt_id": { "type": "string", "format": "uuid" },
+    "seq": { "type": "integer", "minimum": 0 }
+  },
+  "additionalProperties": true
+}
+

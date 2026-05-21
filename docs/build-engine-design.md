@@ -469,11 +469,11 @@ WantedBy=multi-user.target
 
 Estimate: 3-4 days. Complexity: M.
 
-- [ ] Create repo with `uv`, Ruff, ty, pytest, pre-commit.
-- [ ] Add package skeleton and CLI entrypoint.
-- [ ] Import protocol/OpenAPI/image manifest contracts from coreapp docs.
-- [ ] Add CI for lint, type-check, tests, and binary build smoke.
-- [ ] Add initial README and compatibility matrix.
+- [x] Create repo with `uv`, Ruff, ty, pytest, pre-commit.
+- [x] Add package skeleton and CLI entrypoint.
+- [x] Import protocol/OpenAPI/image manifest contracts from coreapp docs.
+- [x] Add CI for lint, type-check, tests, and binary build smoke.
+- [x] Add initial README and compatibility matrix.
 
 ### Stage 1 - Config, Registration, Auth
 

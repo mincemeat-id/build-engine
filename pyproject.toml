@@ -1,0 +1,48 @@
+[project]
+name = "mincemeat-build-engine"
+version = "0.1.0"
+description = "Standalone Mincemeat static-site build engine agent."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "AGPL-3.0-or-later"
+authors = [
+  { name = "Mincemeat maintainers" },
+]
+dependencies = []
+
+[project.scripts]
+build-engine = "build_engine.main:main"
+
+[dependency-groups]
+dev = [
+  "pre-commit>=4.5.0",
+  "pyinstaller>=6.17.0",
+  "pytest>=9.0.0",
+  "ruff>=0.15.0",
+  "ty>=0.0.36",
+]
+
+[build-system]
+requires = ["setuptools>=80.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+build_engine = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["ANN", "B", "E", "F", "I", "SIM", "UP"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ty.environment]
+python-version = "3.14"
+python-platform = "linux"

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mincemeat.id/contracts/build-engine-images/manifest.schema.json",
+  "title": "Mincemeat Build Engine Image Manifest",
+  "type": "object",
+  "required": ["version", "generated_at", "images", "engine_compat"],
+  "properties": {
+    "version": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "images": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["tag", "digest", "frameworks"],
+        "properties": {
+          "tag": { "type": "string", "minLength": 1 },
+          "digest": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+          "frameworks": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "engine_compat": {
+      "type": "object",
+      "required": ["proto_min", "proto_max", "engine_min"],
+      "properties": {
+        "proto_min": { "type": "integer", "minimum": 1 },
+        "proto_max": { "type": "integer", "minimum": 1 },
+        "engine_min": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+

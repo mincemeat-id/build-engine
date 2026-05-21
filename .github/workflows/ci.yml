@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Compile
+        run: uv run python -m compileall src tests
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run ty check
+
+      - name: Tests
+        run: uv run pytest
+
+      - name: Binary build smoke
+        run: |
+          uv run pyinstaller packaging/pyinstaller/build-engine.spec --noconfirm
+          ./dist/build-engine --version
+

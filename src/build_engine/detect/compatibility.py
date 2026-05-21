@@ -1,0 +1,1 @@
+"""Static compatibility checks placeholder."""
