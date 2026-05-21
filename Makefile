@@ -1,4 +1,4 @@
-.PHONY: verify lint typecheck test binary-smoke contracts-sync
+.PHONY: verify lint fmt typecheck test binary-smoke contracts-sync deploy-check hooks-install hooks-uninstall
 
 verify: contracts-sync
 	uv run python -m compileall src tests
@@ -11,6 +11,10 @@ verify: contracts-sync
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
+
+fmt:
+	uv run ruff format .
+	uv run ruff check . --fix
 
 typecheck:
 	uv run ty check
@@ -25,3 +29,11 @@ binary-smoke:
 contracts-sync:
 	uv run python scripts/sync_contracts.py
 
+deploy-check: verify
+
+hooks-install:
+	bash scripts/install-git-hooks.sh
+
+hooks-uninstall:
+	git config --unset core.hooksPath || true
+	@echo "✓ core.hooksPath unset; default .git/hooks/ restored."

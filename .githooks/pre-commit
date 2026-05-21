@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pre-commit — fast lint + format checks on STAGED Python files only.
+#
+# Bypass with: BYPASS_HOOKS=1 git commit ...  (or git commit --no-verify)
+# =============================================================================
+set -euo pipefail
+
+if [[ "${BYPASS_HOOKS:-0}" == "1" ]]; then
+    echo "[pre-commit] BYPASS_HOOKS=1 — skipping checks"
+    exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if [ -t 1 ]; then
+    RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; RESET='\033[0m'
+else
+    RED=''; GREEN=''; YELLOW=''; BOLD=''; RESET=''
+fi
+fail() { echo -e "${RED}${BOLD}[pre-commit] $*${RESET}" >&2; exit 1; }
+info() { echo -e "${YELLOW}[pre-commit]${RESET} $*"; }
+ok()   { echo -e "${GREEN}[pre-commit]${RESET} $*"; }
+
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACMR -z | tr '\0' '\n' || true)
+if [ -z "$STAGED_ALL" ]; then
+    ok "No staged files — nothing to check."
+    exit 0
+fi
+
+PY_FILES=$(echo "$STAGED_ALL" | grep -E '\.py$' || true)
+if [ -z "$PY_FILES" ]; then
+    ok "No staged Python files — nothing to check."
+    exit 0
+fi
+
+command -v uv >/dev/null 2>&1 \
+    || fail "uv not found in PATH — install uv or set BYPASS_HOOKS=1."
+
+info "Ruff lint on staged Python files"
+echo "$PY_FILES" | xargs uv run --quiet ruff check \
+    || fail "Ruff lint failed. Fix with: make fmt"
+
+info "Ruff format check on staged Python files"
+echo "$PY_FILES" | xargs uv run --quiet ruff format --check \
+    || fail "Ruff format check failed. Fix with: make fmt"
+
+ok "All staged-file checks passed."
+

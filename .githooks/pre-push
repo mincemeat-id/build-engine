@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pre-push — deployment-readiness gate.
+#
+# Runs the same checks the CI pipeline enforces. Equivalent to `make verify`.
+# Bypass with BYPASS_HOOKS=1 on feature branches only.
+# =============================================================================
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if [[ "${BYPASS_HOOKS:-0}" == "1" ]]; then
+    protected=0
+    while IFS=' ' read -r _local_ref _local_sha remote_ref _remote_sha; do
+        [ -z "${remote_ref:-}" ] && continue
+        case "$remote_ref" in
+            refs/heads/master|refs/heads/main|refs/heads/release/*|refs/tags/*)
+                protected=1
+                echo "[pre-push] BYPASS_HOOKS=1 rejected for protected ref: $remote_ref" >&2
+                ;;
+        esac
+    done
+    if [ "$protected" -eq 1 ]; then
+        echo "[pre-push] Refusing to bypass deployment-readiness gate on a protected ref." >&2
+        echo "[pre-push] Run 'make verify' and unset BYPASS_HOOKS, or push to a feature branch." >&2
+        exit 1
+    fi
+    echo "[pre-push] BYPASS_HOOKS=1 — skipping checks (non-protected ref)"
+    exit 0
+fi
+
+if [ -t 1 ]; then
+    RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; RESET='\033[0m'
+else
+    RED=''; GREEN=''; YELLOW=''; BOLD=''; RESET=''
+fi
+fail()  { echo -e "${RED}${BOLD}[pre-push] $*${RESET}" >&2; exit 1; }
+step()  { echo -e "\n${YELLOW}${BOLD}▶ [pre-push] $*${RESET}"; }
+done_() { echo -e "${GREEN}✓${RESET} $*"; }
+
+start_ts=$(date +%s)
+
+command -v uv >/dev/null 2>&1 \
+    || fail "uv not found — install uv or set BYPASS_HOOKS=1."
+
+step "Install/sync Python dependencies"
+uv sync --locked --all-extras --dev --quiet \
+    || fail "uv sync failed."
+done_ "uv sync"
+
+step "Deployment-readiness gate"
+make verify \
+    || fail "make verify failed."
+done_ "make verify"
+
+elapsed=$(( $(date +%s) - start_ts ))
+echo ""
+echo -e "${GREEN}${BOLD}✅ pre-push: all deployment-readiness checks passed in ${elapsed}s${RESET}"
+
