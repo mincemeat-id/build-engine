@@ -14,7 +14,6 @@ optional_hiddenimports = [
     "pydantic",
     "pydantic_settings",
     "structlog",
-    "cryptography",
 ]
 hiddenimports = sorted(
     {
@@ -23,7 +22,7 @@ hiddenimports = sorted(
     }
 )
 datas = []
-for package in ("certifi", "tzdata"):
+for package in ("tzdata",):
     package_spec = find_spec(package)
     if package_spec is not None and package_spec.submodule_search_locations is not None:
         datas += collect_data_files(package)

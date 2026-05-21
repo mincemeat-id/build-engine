@@ -10,8 +10,6 @@ from build_engine.agent.auth import (
     AuthError,
     BuildEngineAuthClient,
     Session,
-    certificate_fingerprint_sha256,
-    ensure_engine_certificate,
     refresh_session,
     register_engine,
     validate_credentials_file,
@@ -30,20 +28,17 @@ class FakeRegistrationClient(BuildEngineAuthClient):
         self,
         *,
         registration_token: str,
-        cert_pem: str,
         name: str,
         capabilities: dict[str, object],
     ) -> dict[str, object]:
         self.last_payload = {
             "registration_token": registration_token,
-            "cert_pem": cert_pem,
             "name": name,
             "capabilities": capabilities,
         }
         return {
             "engine_id": "11111111-1111-1111-1111-111111111111",
             "engine_secret": "engine-secret",
-            "backend_cert_fingerprint": "a" * 64,
             "session_jwt": "session-token",
             "session_jwt_expires_at": "2030-01-01T00:00:00+00:00",
         }
@@ -62,38 +57,20 @@ class FakeRefreshClient(BuildEngineAuthClient):
         return Session(engine_id=engine_id, token="fresh-token", expires_at=expires_at)
 
 
-def test_ensure_engine_certificate_creates_pair_with_restrictive_key(tmp_path: Path) -> None:
-    cert_path = tmp_path / "engine.crt"
-    key_path = tmp_path / "engine.key"
-
-    ensure_engine_certificate(cert_path, key_path, common_name="test-engine")
-
-    assert "BEGIN CERTIFICATE" in cert_path.read_text()
-    assert "BEGIN PRIVATE KEY" in key_path.read_text()
-    assert key_path.stat().st_mode & 0o077 == 0
-    assert len(certificate_fingerprint_sha256(cert_path.read_bytes())) == 64
-
-
-def test_validate_credentials_rejects_open_key_permissions(tmp_path: Path) -> None:
-    cert_path = tmp_path / "engine.crt"
-    key_path = tmp_path / "engine.key"
+def test_validate_credentials_rejects_open_credentials_permissions(tmp_path: Path) -> None:
     credentials_path = tmp_path / "credentials.toml"
-    ensure_engine_certificate(cert_path, key_path, common_name="test-engine")
-    key_path.chmod(0o644)
     write_credentials(
         credentials_path,
         EngineCredentials(
             engine_id="11111111-1111-1111-1111-111111111111",
             engine_secret="secret",
-            backend_cert_fingerprint="b" * 64,
             session_jwt="jwt",
             session_jwt_expires_at="2030-01-01T00:00:00+00:00",
-            cert_path=cert_path,
-            key_path=key_path,
             backend_url="https://agent.example",
             name="test-engine",
         ),
     )
+    credentials_path.chmod(0o644)
 
     with pytest.raises(AuthError, match="permissions"):
         validate_credentials_file(credentials_path)
@@ -106,8 +83,6 @@ def test_register_engine_generates_and_persists_credentials(tmp_path: Path) -> N
         overrides={
             "backend_url": "https://agent.example",
             "name": "test-engine",
-            "cert_path": tmp_path / "engine.crt",
-            "key_path": tmp_path / "engine.key",
         },
     )
     client = FakeRegistrationClient()
@@ -117,7 +92,6 @@ def test_register_engine_generates_and_persists_credentials(tmp_path: Path) -> N
     credentials = load_credentials(config.credentials_path)
     assert result.engine_id == "11111111-1111-1111-1111-111111111111"
     assert credentials.engine_secret == "engine-secret"
-    assert credentials.backend_cert_fingerprint == "a" * 64
     assert config.credentials_path.stat().st_mode & 0o077 == 0
     assert client.last_payload is not None
     assert client.last_payload["registration_token"] == "one-time-token"
@@ -125,21 +99,15 @@ def test_register_engine_generates_and_persists_credentials(tmp_path: Path) -> N
 
 
 def test_refresh_session_updates_expired_persisted_token(tmp_path: Path) -> None:
-    cert_path = tmp_path / "engine.crt"
-    key_path = tmp_path / "engine.key"
     credentials_path = tmp_path / "credentials.toml"
-    ensure_engine_certificate(cert_path, key_path, common_name="test-engine")
     expired = datetime.now(UTC) - timedelta(minutes=1)
     write_credentials(
         credentials_path,
         EngineCredentials(
             engine_id="11111111-1111-1111-1111-111111111111",
             engine_secret="secret",
-            backend_cert_fingerprint="c" * 64,
             session_jwt="old-token",
             session_jwt_expires_at=expired.isoformat(),
-            cert_path=cert_path,
-            key_path=key_path,
             backend_url="https://agent.example",
             name="test-engine",
         ),

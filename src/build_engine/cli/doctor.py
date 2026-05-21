@@ -6,7 +6,6 @@ import asyncio
 import json
 import shutil
 import sqlite3
-import ssl
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,17 +15,13 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal
 from urllib import error, request
-from urllib.parse import urlparse
 
 import websockets
 
 from build_engine import __version__
 from build_engine.agent.auth import (
     AuthError,
-    backend_tls_fingerprint,
     client_headers_for_credentials,
-    normalize_fingerprint,
-    validate_certificate_pair,
     validate_credentials_file,
 )
 from build_engine.agent.protocol import PROTOCOL_VERSION, Envelope, ProtocolError, decode_frame
@@ -107,7 +102,6 @@ def run_doctor(
         credentials = validate_credentials_file(config.credentials_path)
     except (AuthError, ValueError, FileNotFoundError, OSError) as exc:
         checks.append(_fail("credentials", str(exc)))
-        checks.append(_skip("certificate", "credentials are unavailable"))
     else:
         checks.append(
             _ok(
@@ -116,7 +110,6 @@ def run_doctor(
                 {"engine_id": credentials.engine_id},
             )
         )
-        checks.append(_check_certificate(credentials))
 
     checks.extend(
         (
@@ -129,9 +122,6 @@ def run_doctor(
         )
     )
 
-    checks.append(
-        _check_backend_tls(config, credentials=credentials, timeout_seconds=timeout_seconds)
-    )
     checks.append(
         _check_agent_health(
             config,
@@ -186,18 +176,6 @@ def _check_version(config: EngineConfig) -> DoctorCheck:
         "version",
         f"build-engine {__version__}, protocol v{PROTOCOL_VERSION}",
         {"version": __version__, "protocol_version": PROTOCOL_VERSION},
-    )
-
-
-def _check_certificate(credentials: EngineCredentials) -> DoctorCheck:
-    try:
-        validate_certificate_pair(credentials.cert_path, credentials.key_path)
-    except (AuthError, OSError) as exc:
-        return _fail("certificate", str(exc))
-    return _ok(
-        "certificate",
-        f"{credentials.cert_path} and {credentials.key_path}",
-        {"cert_path": str(credentials.cert_path), "key_path": str(credentials.key_path)},
     )
 
 
@@ -317,37 +295,6 @@ def _check_network_guard(*, timeout_seconds: float) -> DoctorCheck:
     )
 
 
-def _check_backend_tls(
-    config: EngineConfig,
-    *,
-    credentials: EngineCredentials | None,
-    timeout_seconds: float,
-) -> DoctorCheck:
-    backend_url = _backend_url(config, credentials)
-    if credentials is None:
-        return _skip("backend_tls", "credentials are unavailable")
-    if not backend_url:
-        return _fail("backend_tls", "backend_url is not configured")
-    try:
-        expected = normalize_fingerprint(credentials.backend_cert_fingerprint)
-        actual = backend_tls_fingerprint(backend_url, timeout_seconds=timeout_seconds)
-    except AuthError as exc:
-        return _fail("backend_tls", str(exc))
-    if not actual:
-        return _fail("backend_tls", "backend_url must use https for fingerprint pinning")
-    if actual != expected:
-        return _fail(
-            "backend_tls",
-            "backend certificate fingerprint mismatch",
-            {"expected": expected, "actual": actual},
-        )
-    return _ok(
-        "backend_tls",
-        "fingerprint matches pinned backend certificate",
-        {"fingerprint": actual},
-    )
-
-
 def _check_agent_health(
     config: EngineConfig,
     *,
@@ -363,8 +310,7 @@ def _check_agent_health(
     url = _join_backend_path(backend_url, HEALTH_PATH)
     req = request.Request(url, headers=client_headers_for_credentials(credentials))
     try:
-        ssl_context = _client_ssl_context(backend_url, credentials)
-        with request.urlopen(req, timeout=timeout_seconds, context=ssl_context) as response:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
             body = response.read()
             date_header = response.headers.get("Date")
     except error.HTTPError as exc:
@@ -436,26 +382,14 @@ async def _receive_welcome(
     timeout_seconds: float,
 ) -> Envelope:
     url = websocket_url(credentials.backend_url or config.backend_url or "")
-    ssl_context = _client_ssl_context(url, credentials)
     async with websockets.connect(
         url,
         additional_headers=uplink_headers(config, credentials),
         max_size=1_048_576,
-        ssl=ssl_context,
         open_timeout=timeout_seconds,
     ) as websocket:
         frame = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
     return decode_frame(frame)
-
-
-def _client_ssl_context(url: str, credentials: EngineCredentials) -> ssl.SSLContext | None:
-    parsed = urlparse(url)
-    if parsed.scheme not in {"https", "wss"}:
-        return None
-
-    context = ssl.create_default_context()
-    context.load_cert_chain(credentials.cert_path, credentials.key_path)
-    return context
 
 
 def _join_backend_path(backend_url: str, path: str) -> str:

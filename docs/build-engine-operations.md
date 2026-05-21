@@ -94,16 +94,14 @@ sudo build-engine doctor --json | jq .
 
 `doctor` exits non-zero when any required check fails. It verifies the binary
 and protocol version, Docker, cgroup v2, disk space, writable workspace/cache
-paths, credentials and cert/key parsing, backend TLS pinning, agent health,
-WSS welcome negotiation, image pull, SQLite integrity, clock skew, and network
-guard setup.
+paths, credentials, agent health, WSS welcome negotiation, image pull, SQLite
+integrity, clock skew, and network guard setup.
 
 ## Troubleshooting
 
 | Symptom | Likely Cause | Action |
 |---------|--------------|--------|
 | `credentials` fails | Engine has not been registered or credentials are unreadable | Re-run `build-engine register` with a fresh token. |
-| `backend_tls` fails | Backend certificate changed or the wrong backend URL is configured | Confirm the URL, then re-register to pin the new certificate. |
 | `docker` fails | Docker is stopped or the `build-engine` user is not in the Docker group | Run `systemctl status docker`; fix group membership; restart the service. |
 | `disk_space` fails | `/var/lib/build-engine` has less than 20 GiB free | Run `build-engine cache reset`, prune Docker images, or expand the volume. |
 | `sqlite_integrity` fails | Local queue database is corrupted | Stop the service, move `queue.sqlite` aside, and restart. Coreapp will redispatch lost attempts. |

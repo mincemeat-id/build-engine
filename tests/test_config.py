@@ -13,8 +13,6 @@ from build_engine.config import (
 def test_config_layering_prefers_env_and_cli_over_files(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     credentials_path = tmp_path / "credentials.toml"
-    cert_path = tmp_path / "engine.crt"
-    key_path = tmp_path / "engine.key"
     config_path.write_text(
         "\n".join(
             (
@@ -31,11 +29,8 @@ def test_config_layering_prefers_env_and_cli_over_files(tmp_path: Path) -> None:
         EngineCredentials(
             engine_id="00000000-0000-0000-0000-000000000000",
             engine_secret="secret",
-            backend_cert_fingerprint="0" * 64,
             session_jwt="jwt",
             session_jwt_expires_at="2030-01-01T00:00:00+00:00",
-            cert_path=cert_path,
-            key_path=key_path,
             backend_url="https://from-credentials.example",
             name="credential-name",
         ),

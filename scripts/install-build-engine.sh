@@ -41,7 +41,7 @@ install -d -m 0755 "${ROOT}${SYSCONFDIR}" "${ROOT}${STATE_DIR}" "${ROOT}${LOG_DI
 if [[ ! -f "${ROOT}${SYSCONFDIR}/config.toml" ]]; then
   install -m 0644 /dev/stdin "${ROOT}${SYSCONFDIR}/config.toml" <<EOF
 # Mincemeat Build Engine host config.
-# Registration writes credentials.toml and pins the backend certificate.
+# Registration writes credentials.toml.
 state_dir = "${STATE_DIR}"
 max_concurrency = 2
 heartbeat_interval_seconds = 15

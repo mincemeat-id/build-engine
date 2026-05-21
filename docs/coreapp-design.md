@@ -30,7 +30,7 @@ artifacts, and user-visible deployment status.
 | Busy engines | Queue jobs up to `BUILD_ENGINE_QUEUE_MAX_WAIT_SECONDS=1800`; show `WAITING_FOR_ENGINE`. |
 | No compatible online engine | Fail the `BUILD` stage immediately with `NO_ENGINE_AVAILABLE`. |
 | Artifact/log staging | Use a platform-owned staging bucket/prefix. |
-| TLS termination | Dedicated agent hostname through Traefik/Nginx, not CDN-proxied. Forward verified peer certificate/fingerprint to FastAPI. |
+| Agent authentication | One-time registration token, engine secret, and short-lived bearer session token. |
 | Multi-replica routing | Redis engine command fanout: `build-engine:commands:{engine_id}`. |
 | Framework v1 GA | Astro, Vite, Eleventy, Docusaurus, VitePress, VuePress, Gatsby, Hugo, Zola, Next.js export, Nuxt generate, SvelteKit static, Angular static, Remix SPA, Generic. |
 | Network controls | Record policy in job payload; engine enforces egress blocks. |
@@ -73,7 +73,7 @@ Add models in `shared/src/shared/models/` and export them from
 
 | Model | Purpose |
 |-------|---------|
-| `BuildEngine` | Registered build engine identity, status, cert fingerprint, capabilities, metrics snapshot, version/protocol metadata. |
+| `BuildEngine` | Registered build engine identity, status, capabilities, metrics snapshot, version/protocol metadata. |
 | `BuildEngineToken` | One-time registration token hash, labels, expiry, consumption audit. |
 | `BuildJob` | User-visible build job linked to one `Pipeline` and one `PipelineStage`. Stores source artifact, resolved framework/PM/image, current attempt, final artifact metadata, error state, cache flag. |
 | `BuildJobAttempt` | One dispatch/run attempt on one engine. Stores `attempt_id`, engine, status, `last_seq`, artifact metadata, error state, timestamps. |
@@ -216,7 +216,7 @@ Agent endpoints:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/api/v1/build-engines/agent/register` | One-time token + cert registration. |
+| `POST` | `/api/v1/build-engines/agent/register` | One-time token registration. |
 | `POST` | `/api/v1/build-engines/agent/sessions` | Mint short-lived JWT. |
 | `POST` | `/api/v1/build-engines/agent/heartbeats` | Liveness/capacity. |
 | `WS` | `/api/v1/build-engines/agent/ws` | Job/control/status/log stream. |
@@ -225,25 +225,21 @@ Agent endpoints:
 | `POST` | `/api/v1/build-engines/agent/metrics` | 15s metrics rollup. |
 | `GET` | `/api/v1/build-engines/agent/health` | Doctor endpoint. |
 
-## Auth And TLS
+## Auth
 
 Registration:
 
 1. Admin creates one-time token.
-2. Engine self-generates cert/private key.
-3. Engine POSTs token, cert PEM, name, capabilities.
-4. Backend stores encrypted cert PEM and SHA256 fingerprint.
-5. Backend returns `engine_id`, `engine_secret`, backend TLS leaf fingerprint,
-   and initial JWT.
+2. Engine POSTs token, name, and capabilities.
+3. Backend stores only the hashed registration token consumption record and
+   hashed engine secret.
+4. Backend returns `engine_id`, `engine_secret`, and initial JWT.
 
 Steady state:
 
-- Dedicated agent hostname is not CDN-proxied.
-- Traefik/Nginx requests client certs and forwards verified peer cert or
-  fingerprint through trusted headers to FastAPI.
-- FastAPI matches fingerprint to an enabled `BuildEngine`.
+- Engine mints short-lived sessions with `engine_id` and `engine_secret`.
 - Short-lived JWT carries `engine_id`, protocol, and capability digest.
-- Engine pins backend TLS leaf fingerprint.
+- FastAPI loads the enabled `BuildEngine` for every agent request.
 
 ## Build Secrets
 

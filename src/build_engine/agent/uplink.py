@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import ssl
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -14,7 +13,7 @@ from urllib.parse import urlparse, urlunparse
 import websockets
 
 from build_engine import __version__
-from build_engine.agent.auth import BuildEngineAuthClient, client_headers_for_credentials
+from build_engine.agent.auth import client_headers_for_credentials
 from build_engine.agent.heartbeat import HeartbeatSnapshot, idle_heartbeat
 from build_engine.agent.protocol import (
     INBOUND_MESSAGE_TYPES,
@@ -46,7 +45,7 @@ class WebSocketLike(Protocol):
 
 
 type Connector = Callable[
-    [str, Mapping[str, str], ssl.SSLContext | None],
+    [str, Mapping[str, str]],
     Awaitable[WebSocketLike],
 ]
 type HeartbeatProvider = Callable[[], HeartbeatSnapshot]
@@ -259,16 +258,9 @@ class BuildEngineUplink:
             raise ProtocolError("backend_url is required for uplink")
         backend_url = self.credentials.backend_url or self.config.backend_url
         assert backend_url is not None
-        auth_client = BuildEngineAuthClient(
-            backend_url,
-            pinned_fingerprint=self.credentials.backend_cert_fingerprint,
-        )
-        auth_client.verify_backend_tls_pin()
-
         url = websocket_url(backend_url)
         headers = uplink_headers(self.config, self.credentials)
-        ssl_context = _ssl_context_for(url, self.credentials)
-        websocket = await self.connector(url, headers, ssl_context)
+        websocket = await self.connector(url, headers)
         self._ws = websocket
         heartbeat_task: asyncio.Task[None] | None = None
         try:
@@ -437,23 +429,12 @@ def uplink_headers(config: EngineConfig, credentials: EngineCredentials) -> dict
 async def _websockets_connector(
     url: str,
     headers: Mapping[str, str],
-    ssl_context: ssl.SSLContext | None,
 ) -> WebSocketLike:
     return await websockets.connect(
         url,
         additional_headers=dict(headers),
         max_size=1_048_576,
-        ssl=ssl_context,
     )
-
-
-def _ssl_context_for(url: str, credentials: EngineCredentials) -> ssl.SSLContext | None:
-    parsed = urlparse(url)
-    if parsed.scheme != "wss":
-        return None
-    context = ssl.create_default_context()
-    context.load_cert_chain(credentials.cert_path, credentials.key_path)
-    return context
 
 
 def _required_payload_str(payload: dict[str, Any], key: str) -> str:

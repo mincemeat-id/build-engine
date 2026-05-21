@@ -9,7 +9,6 @@ authors = [
   { name = "Mincemeat maintainers" },
 ]
 dependencies = [
-  "cryptography>=46.0.0",
   "websockets>=15.0.0",
 ]
 

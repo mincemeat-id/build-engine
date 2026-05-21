@@ -9,8 +9,6 @@ from typing import Any
 
 DEFAULT_CONFIG_PATH = Path("/etc/mincemeat/build-engine/config.toml")
 DEFAULT_CREDENTIALS_PATH = Path("/etc/mincemeat/build-engine/credentials.toml")
-DEFAULT_CERT_PATH = Path("/etc/mincemeat/build-engine/engine.crt")
-DEFAULT_KEY_PATH = Path("/etc/mincemeat/build-engine/engine.key")
 DEFAULT_STATE_DIR = Path("/var/lib/build-engine")
 
 
@@ -48,8 +46,6 @@ class EngineConfig:
     cache_site_max_bytes: int = DEFAULTS.cache_site_max_bytes
     cache_ttl_days: int = DEFAULTS.cache_ttl_days
     credentials_path: Path = DEFAULT_CREDENTIALS_PATH
-    cert_path: Path = DEFAULT_CERT_PATH
-    key_path: Path = DEFAULT_KEY_PATH
     state_dir: Path = DEFAULT_STATE_DIR
     image_manifest_version: str = "1.0.0"
     images: tuple[str, ...] = ("node:20", "node:22", "bun:1", "hugo:latest")
@@ -64,11 +60,8 @@ class EngineCredentials:
 
     engine_id: str
     engine_secret: str
-    backend_cert_fingerprint: str
     session_jwt: str
     session_jwt_expires_at: str
-    cert_path: Path
-    key_path: Path
     backend_url: str | None = None
     name: str | None = None
 
@@ -95,7 +88,7 @@ def load_config(
     active_credentials_path = _path_value(values["credentials_path"])
     if active_credentials_path.exists():
         credentials_values = _load_toml(active_credentials_path)
-        for key in ("backend_url", "name", "cert_path", "key_path"):
+        for key in ("backend_url", "name"):
             if key in credentials_values:
                 values[key] = credentials_values[key]
 
@@ -105,8 +98,6 @@ def load_config(
             values[key] = value
 
     values["credentials_path"] = _path_value(values["credentials_path"])
-    values["cert_path"] = _path_value(values["cert_path"])
-    values["key_path"] = _path_value(values["key_path"])
     values["state_dir"] = _path_value(values["state_dir"])
     if isinstance(values.get("images"), list):
         values["images"] = tuple(str(item) for item in values["images"])
@@ -123,11 +114,8 @@ def load_credentials(path: Path | str) -> EngineCredentials:
     required = (
         "engine_id",
         "engine_secret",
-        "backend_cert_fingerprint",
         "session_jwt",
         "session_jwt_expires_at",
-        "cert_path",
-        "key_path",
     )
     missing = [key for key in required if not raw.get(key)]
     if missing:
@@ -136,11 +124,8 @@ def load_credentials(path: Path | str) -> EngineCredentials:
     return EngineCredentials(
         engine_id=str(raw["engine_id"]),
         engine_secret=str(raw["engine_secret"]),
-        backend_cert_fingerprint=str(raw["backend_cert_fingerprint"]),
         session_jwt=str(raw["session_jwt"]),
         session_jwt_expires_at=str(raw["session_jwt_expires_at"]),
-        cert_path=_path_value(raw["cert_path"]),
-        key_path=_path_value(raw["key_path"]),
         backend_url=str(raw["backend_url"]) if raw.get("backend_url") else None,
         name=str(raw["name"]) if raw.get("name") else None,
     )
@@ -155,11 +140,8 @@ def write_credentials(path: Path | str, credentials: EngineCredentials) -> None:
         (
             f"engine_id = {_toml_string(credentials.engine_id)}",
             f"engine_secret = {_toml_string(credentials.engine_secret)}",
-            f"backend_cert_fingerprint = {_toml_string(credentials.backend_cert_fingerprint)}",
             f"session_jwt = {_toml_string(credentials.session_jwt)}",
             f"session_jwt_expires_at = {_toml_string(credentials.session_jwt_expires_at)}",
-            f"cert_path = {_toml_string(str(credentials.cert_path))}",
-            f"key_path = {_toml_string(str(credentials.key_path))}",
             f"backend_url = {_toml_string(credentials.backend_url or '')}",
             f"name = {_toml_string(credentials.name or '')}",
             "",
@@ -196,8 +178,6 @@ def _config_defaults() -> dict[str, Any]:
         "cache_site_max_bytes": DEFAULTS.cache_site_max_bytes,
         "cache_ttl_days": DEFAULTS.cache_ttl_days,
         "credentials_path": DEFAULT_CREDENTIALS_PATH,
-        "cert_path": DEFAULT_CERT_PATH,
-        "key_path": DEFAULT_KEY_PATH,
         "state_dir": DEFAULT_STATE_DIR,
         "image_manifest_version": "1.0.0",
         "images": ("node:20", "node:22", "bun:1", "hugo:latest"),

@@ -36,6 +36,5 @@ def test_pyinstaller_spec_has_onefile_hidden_imports_and_debuggable_settings() -
 
     assert 'collect_submodules("build_engine")' in spec
     assert '"websockets"' in spec
-    assert '"cryptography"' in spec
     assert "upx=False" in spec
     assert "console=True" in spec

@@ -48,8 +48,6 @@ def _build_parser() -> argparse.ArgumentParser:
     register = subparsers.add_parser("register", help="register this engine with coreapp")
     register.add_argument("--config", default="/etc/mincemeat/build-engine/config.toml")
     register.add_argument("--credentials", default=None)
-    register.add_argument("--cert", default=None)
-    register.add_argument("--key", default=None)
     register.add_argument("--backend-url", required=True)
     register.add_argument("--token", required=True)
     register.add_argument("--name", required=True)
@@ -137,8 +135,6 @@ def _register(args: argparse.Namespace) -> int:
             "backend_url": args.backend_url,
             "name": args.name,
             "max_concurrency": args.max_concurrency,
-            "cert_path": args.cert,
-            "key_path": args.key,
         },
     )
     try:
@@ -147,8 +143,7 @@ def _register(args: argparse.Namespace) -> int:
         print(f"registration failed: {exc}", file=sys.stderr)
         return 1
     print(
-        "registered build engine "
-        f"{result.engine_id}; credentials={result.credentials_path} cert={result.cert_path}",
+        f"registered build engine {result.engine_id}; credentials={result.credentials_path}",
     )
     return 0
 

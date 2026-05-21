@@ -80,10 +80,9 @@ build-engine cache reset --site-id SITE_ID
 build-engine drain
 ```
 
-Registration, credential validation, certificate/key generation, backend TLS
-fingerprint pinning, session refresh, WSS uplink, and durable queueing are
-implemented. Executor, cache, metrics, and full diagnostics land in later
-stages.
+Registration, credential validation, session refresh, WSS uplink, and durable
+queueing are implemented. Executor, cache, metrics, and full diagnostics land
+in later stages.
 
 ## Compatibility Matrix
 

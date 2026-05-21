@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import ssl
 from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from build_engine.agent.auth import ensure_engine_certificate
 from build_engine.agent.protocol import Envelope, new_envelope
 from build_engine.agent.uplink import (
     BackoffPolicy,
@@ -55,28 +53,20 @@ class FakeWebSocket(WebSocketLike):
 
 @pytest.fixture
 def engine_material(tmp_path: Path) -> tuple[Any, EngineCredentials]:
-    cert_path = tmp_path / "engine.crt"
-    key_path = tmp_path / "engine.key"
-    ensure_engine_certificate(cert_path, key_path, common_name="test-engine")
     config = load_config(
         config_path=tmp_path / "missing.toml",
         credentials_path=tmp_path / "credentials.toml",
         overrides={
             "backend_url": "https://agent.example",
             "name": "test-engine",
-            "cert_path": cert_path,
-            "key_path": key_path,
             "state_dir": tmp_path,
         },
     )
     credentials = EngineCredentials(
         engine_id="11111111-1111-1111-1111-111111111111",
         engine_secret="secret",
-        backend_cert_fingerprint="a" * 64,
         session_jwt="session-token",
         session_jwt_expires_at="2030-01-01T00:00:00+00:00",
-        cert_path=cert_path,
-        key_path=key_path,
         backend_url="https://agent.example",
         name="test-engine",
     )
@@ -155,17 +145,11 @@ async def _connect_once_negotiates_hello_handles_ping_and_assignment(
     async def connector(
         url: str,
         headers: Mapping[str, str],
-        ssl_context: ssl.SSLContext | None,
     ) -> WebSocketLike:
         assert url == "wss://agent.example/api/v1/build-engines/agent/ws"
         assert headers["Authorization"] == "Bearer session-token"
-        assert ssl_context is not None
         return websocket
 
-    monkeypatch.setattr(
-        "build_engine.agent.auth.BuildEngineAuthClient.verify_backend_tls_pin",
-        lambda self: None,
-    )
     uplink = BuildEngineUplink(
         config,
         credentials,
@@ -229,15 +213,10 @@ async def _event_spool_replays_from_backend_last_seq(
     async def connector(
         url: str,
         headers: Mapping[str, str],
-        ssl_context: ssl.SSLContext | None,
     ) -> WebSocketLike:
-        del url, headers, ssl_context
+        del url, headers
         return websocket
 
-    monkeypatch.setattr(
-        "build_engine.agent.auth.BuildEngineAuthClient.verify_backend_tls_pin",
-        lambda self: None,
-    )
     uplink = BuildEngineUplink(
         config,
         credentials,

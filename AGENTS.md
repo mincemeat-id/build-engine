@@ -50,8 +50,6 @@ Important paths:
 |------|---------|
 | `/etc/mincemeat/build-engine/config.toml` | System config |
 | `/etc/mincemeat/build-engine/credentials.toml` | Registered engine credentials |
-| `/etc/mincemeat/build-engine/engine.crt` | Engine client cert |
-| `/etc/mincemeat/build-engine/engine.key` | Engine private key |
 | `/var/lib/build-engine/` | Queue, cache, workspaces, and runtime state |
 
 ---
@@ -117,7 +115,7 @@ and tags.
 - `ty` is the type checker; run from the repo root.
 - Prefer stdlib and small focused modules until later stages justify a runtime
   dependency.
-- Use structured parsers/APIs for TOML, JSON, certificates, and contracts.
+- Use structured parsers/APIs for TOML, JSON, and contracts.
 - Keep Stage work scoped to the implementation plan in
   `docs/build-engine-design.md`.
 
@@ -167,4 +165,3 @@ make verify
 - Current implementation checklist lives in `docs/build-engine-design.md`.
 - Builder image repository design lives in `docs/build-engine-images-design.md`.
 - Coreapp integration design lives in `docs/coreapp-design.md`.
-

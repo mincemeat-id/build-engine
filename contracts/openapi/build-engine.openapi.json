@@ -103,9 +103,6 @@
           "capabilities": {
             "$ref": "#/components/schemas/BuildEngineCapabilities"
           },
-          "cert_pem": {
-            "type": "string"
-          },
           "name": {
             "type": "string"
           },
@@ -115,7 +112,6 @@
         },
         "required": [
           "registration_token",
-          "cert_pem",
           "name",
           "capabilities"
         ],
@@ -123,9 +119,6 @@
       },
       "BuildEngineAgentRegisterResponse": {
         "properties": {
-          "backend_cert_fingerprint": {
-            "type": "string"
-          },
           "engine_id": {
             "format": "uuid",
             "type": "string"
@@ -144,7 +137,6 @@
         "required": [
           "engine_id",
           "engine_secret",
-          "backend_cert_fingerprint",
           "session_jwt",
           "session_jwt_expires_at"
         ],
@@ -446,10 +438,6 @@
             "format": "date-time",
             "type": "string"
           },
-          "fingerprint": {
-            "description": "SHA256 certificate fingerprint",
-            "type": "string"
-          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -504,7 +492,6 @@
           "max_concurrency",
           "labels",
           "capabilities",
-          "fingerprint",
           "last_seen_at",
           "created_at",
           "updated_at"

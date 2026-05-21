@@ -290,11 +290,8 @@ def _prepare_job(
     credentials = EngineCredentials(
         engine_id="11111111-1111-1111-1111-111111111111",
         engine_secret="secret",
-        backend_cert_fingerprint="a" * 64,
         session_jwt="session-token",
         session_jwt_expires_at="2030-01-01T00:00:00+00:00",
-        cert_path=tmp_path / "engine.crt",
-        key_path=tmp_path / "engine.key",
         backend_url=backend_url,
         name="test-engine",
     )

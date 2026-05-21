@@ -10,7 +10,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from build_engine.agent.auth import ensure_engine_certificate
 from build_engine.config import EngineCredentials
 from build_engine.executor.cache import (
     cache_size_bytes,
@@ -138,17 +137,12 @@ def test_metrics_collector_rolls_up_cache_ratio_and_heartbeat() -> None:
 
 
 def test_metrics_reporter_posts_openapi_rollup(tmp_path: Path) -> None:
-    cert_path = tmp_path / "engine.crt"
-    key_path = tmp_path / "engine.key"
-    ensure_engine_certificate(cert_path, key_path, common_name="metrics-test")
+    del tmp_path
     credentials = EngineCredentials(
         engine_id="11111111-1111-1111-1111-111111111111",
         engine_secret="secret",
-        backend_cert_fingerprint="a" * 64,
         session_jwt="session-token",
         session_jwt_expires_at="2030-01-01T00:00:00+00:00",
-        cert_path=cert_path,
-        key_path=key_path,
         backend_url=None,
         name="metrics-test",
     )

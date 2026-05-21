@@ -30,7 +30,7 @@ The design is split by repository so each component has its own source of truth:
 | Queueing when engines are busy | Compatible online engines that are saturated keep jobs queued for up to `BUILD_ENGINE_QUEUE_MAX_WAIT_SECONDS=1800`; `BUILD` reports `WAITING_FOR_ENGINE`. |
 | No compatible online engine | Fail immediately with `NO_ENGINE_AVAILABLE`. No-build pipelines still skip `BUILD` and continue. |
 | Artifact/log staging | Use a platform-owned staging bucket/prefix. The worker promotes build output from staging to the site's final storage target. |
-| Agent TLS topology | Use a dedicated agent hostname outside CDN proxying. Traefik/Nginx requests client certs, forwards the verified peer certificate/fingerprint to FastAPI, and FastAPI pins against `BuildEngine.fingerprint`. |
+| Agent authentication | Use a one-time registration token, engine secret, and short-lived bearer session tokens for agent HTTP and WSS requests. |
 | Multi-replica backend routing | Store engine WSS ownership in Redis and publish commands to `build-engine:commands:{engine_id}`. |
 | Retry identity | Use `BuildJobAttempt.id` on every WSS event and artifact upload URL. Stale attempts are audit-only. |
 | Framework GA scope | v1 GA: Astro, Vite, Eleventy, Docusaurus, VitePress, VuePress, Gatsby, Hugo, Zola, Next.js static export, Nuxt generate, SvelteKit static, Angular static, Remix SPA, Generic. |

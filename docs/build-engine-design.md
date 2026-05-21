@@ -106,8 +106,6 @@ Layering order:
 
 Required credential files:
 
-- `/etc/mincemeat/build-engine/engine.crt`
-- `/etc/mincemeat/build-engine/engine.key`
 - `/etc/mincemeat/build-engine/credentials.toml`
 
 Important settings:
@@ -138,20 +136,15 @@ Registration:
      --max-concurrency 2
    ```
 
-2. CLI generates RSA-3072 or Ed25519 self-signed cert and private key.
-3. CLI posts token, cert PEM, name, capabilities, protocol, and image manifest
+2. CLI posts token, name, capabilities, protocol, and image manifest
    version to coreapp.
-4. CLI stores `engine_id`, encrypted/hashed `engine_secret` material,
-   backend TLS leaf fingerprint, cert path, and key path.
+3. CLI stores `engine_id`, encrypted/hashed `engine_secret` material, backend
+   URL, name, and the initial session JWT.
 
 Steady state:
 
-- Engine presents self-signed client cert to the dedicated agent hostname.
 - Engine sends short-lived JWT on HTTP/WSS calls.
-- Engine pins backend TLS leaf fingerprint.
 - Engine rotates JWT before expiry through `/agent/sessions`.
-- If backend fingerprint changes, engine refuses connection and `doctor`
-  reports the mismatch.
 
 ## Agent WSS Protocol
 
@@ -402,8 +395,7 @@ Commands:
 - cgroup v2
 - disk space >= 20 GiB
 - workspace/cache writable
-- cert/key parseable
-- backend TLS fingerprint
+- credentials parseable
 - agent health endpoint
 - WSS handshake
 - image pull
