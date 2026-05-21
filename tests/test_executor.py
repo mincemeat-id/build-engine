@@ -26,8 +26,14 @@ from build_engine.executor.docker_runner import (
     run_container,
 )
 from build_engine.executor.network import DockerNetworkGuard
-from build_engine.executor.stream import SecretRedactor
-from build_engine.executor.workspace import WorkspaceError, download_source, extract_source
+from build_engine.executor.stream import SecretRedactor, _frame_chunks
+from build_engine.executor.workspace import (
+    WorkspaceError,
+    cleanup_workspace,
+    create_workspace,
+    download_source,
+    extract_source,
+)
 
 
 def test_source_download_verifies_sha256_and_extracts_safely(tmp_path: Path) -> None:
@@ -129,6 +135,30 @@ def test_secret_redactor_replaces_exact_secret_values() -> None:
     redactor = SecretRedactor(["abc123", "token"])
 
     assert redactor.redact("token=abc123") == "[REDACTED]=[REDACTED]"
+
+
+def test_log_frame_chunks_stay_under_protocol_byte_limit() -> None:
+    frames = _frame_chunks(("é" * 40_000) + ("x" * 70_000))
+
+    assert len(frames) > 1
+    assert all(len(frame.encode("utf-8")) <= 65_536 for frame in frames)
+
+
+def test_workspace_cleanup_removes_success_and_prunes_failed_retention(tmp_path: Path) -> None:
+    successful = create_workspace(tmp_path, "success")
+    (successful.source_root / "index.html").write_text("ok", encoding="utf-8")
+
+    cleanup_workspace(successful)
+
+    assert not successful.attempt_dir.exists()
+
+    for index in range(3):
+        failed = create_workspace(tmp_path, f"failed-{index}")
+        cleanup_workspace(failed, retain_failed=True, failed_keep=2)
+
+    retained = sorted(path.name for path in (tmp_path / "jobs").iterdir())
+    assert len(retained) == 2
+    assert "failed-0" not in retained
 
 
 def test_site_cache_maps_package_manager_mounts_and_reset(tmp_path: Path) -> None:

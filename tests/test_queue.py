@@ -44,6 +44,25 @@ def test_enqueue_is_idempotent_by_build_job_and_attempt(tmp_path: Path) -> None:
     assert store.queue_depth() == 1
 
 
+def test_current_attempt_tracks_newer_assignment_for_same_build(tmp_path: Path) -> None:
+    store = SQLiteQueueStore(tmp_path / "queue.sqlite")
+    store.initialize()
+    first = _payload(attempt_id="33333333-3333-3333-3333-333333333333")
+    second = _payload(attempt_id="44444444-4444-4444-4444-444444444444")
+
+    store.enqueue(first)
+    store.enqueue(second)
+
+    assert not store.is_current_attempt(
+        build_job_id=first["build_job_id"],
+        attempt_id=first["attempt_id"],
+    )
+    assert store.is_current_attempt(
+        build_job_id=second["build_job_id"],
+        attempt_id=second["attempt_id"],
+    )
+
+
 def test_lease_can_be_recovered_after_restart_when_expired(tmp_path: Path) -> None:
     db_path = tmp_path / "queue.sqlite"
     store = SQLiteQueueStore(db_path)

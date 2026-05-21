@@ -128,6 +128,29 @@ class SQLiteQueueStore:
             ).fetchall()
         return tuple(_job_from_row(row) for row in rows)
 
+    def is_current_attempt(self, *, build_job_id: str, attempt_id: str) -> bool:
+        """Return whether `attempt_id` is the newest locally known attempt for a build."""
+
+        with self._connect() as db:
+            row = db.execute(
+                """
+                SELECT rowid FROM jobs
+                WHERE build_job_id = ? AND attempt_id = ?
+                """,
+                (build_job_id, attempt_id),
+            ).fetchone()
+            if row is None:
+                raise QueueError("Cannot check freshness for unknown attempt")
+            newer = db.execute(
+                """
+                SELECT 1 FROM jobs
+                WHERE build_job_id = ? AND rowid > ?
+                LIMIT 1
+                """,
+                (build_job_id, int(row["rowid"])),
+            ).fetchone()
+        return newer is None
+
     def acquire_lease(
         self,
         *,

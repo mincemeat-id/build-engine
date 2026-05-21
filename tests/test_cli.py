@@ -1,6 +1,8 @@
 """CLI smoke tests."""
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from pytest import CaptureFixture, MonkeyPatch
@@ -18,6 +20,18 @@ def test_version_flag_exits_cleanly(capsys: CaptureFixture[str]) -> None:
 
     captured = capsys.readouterr()
     assert "build-engine" in captured.out
+
+
+def test_module_entrypoint_starts_and_reports_version() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "build_engine", "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "build-engine" in result.stdout
 
 
 def test_doctor_json_reports_missing_credentials(

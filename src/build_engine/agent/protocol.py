@@ -70,7 +70,10 @@ class Envelope:
     def to_json(self) -> str:
         """Encode the envelope as one compact JSON websocket frame."""
 
-        return json.dumps(self.to_dict(), separators=(",", ":"), sort_keys=True)
+        encoded = json.dumps(self.to_dict(), separators=(",", ":"), sort_keys=True)
+        if len(encoded.encode("utf-8")) > MAX_FRAME_BYTES:
+            raise ProtocolError("Frame exceeds 1 MiB")
+        return encoded
 
 
 def new_envelope(

@@ -563,12 +563,12 @@ Estimate: 1 week. Complexity: L.
 
 Estimate: 1-2 weeks. Complexity: XL.
 
-- [ ] Run Astro/Vite end-to-end against local coreapp.
-- [ ] Run all v1 GA framework fixtures.
-- [ ] Run cancellation, timeout, OOM, engine-lost, stale-attempt, backend
+- [x] Run Astro/Vite end-to-end against local coreapp.
+- [x] Run all v1 GA framework fixtures.
+- [x] Run cancellation, timeout, OOM, engine-lost, stale-attempt, backend
   reconnect, storage failure, and cache reset drills.
-- [ ] Tune log/event throughput and frame limits.
-- [ ] Verify binary startup, memory, disk, and cleanup behavior.
+- [x] Tune log/event throughput and frame limits.
+- [x] Verify binary startup, memory, disk, and cleanup behavior.
 
 ## Acceptance Criteria
 

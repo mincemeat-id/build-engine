@@ -18,6 +18,10 @@ class ArtifactError(RuntimeError):
     """Raised when an artifact cannot be packaged or uploaded."""
 
 
+class ArtifactUploadError(ArtifactError):
+    """Raised when coreapp or staging storage rejects an artifact upload."""
+
+
 @dataclass(frozen=True, slots=True)
 class ArtifactPackage:
     """Packaged build output ready for upload."""
@@ -128,11 +132,11 @@ class ArtifactUploadClient:
                 decoded = json.loads(response.read().decode("utf-8"))
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise ArtifactError(
+            raise ArtifactUploadError(
                 f"Artifact upload URL request failed: HTTP {exc.code} {detail}"
             ) from exc
         except (OSError, json.JSONDecodeError) as exc:
-            raise ArtifactError(f"Artifact upload URL request failed: {exc}") from exc
+            raise ArtifactUploadError(f"Artifact upload URL request failed: {exc}") from exc
         if not isinstance(decoded, dict):
             raise ArtifactError("Artifact upload URL response was not a JSON object")
         return _upload_ticket_from_payload(decoded)
@@ -154,9 +158,9 @@ class ArtifactUploadClient:
                 response.read()
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise ArtifactError(f"Artifact upload failed: HTTP {exc.code} {detail}") from exc
+            raise ArtifactUploadError(f"Artifact upload failed: HTTP {exc.code} {detail}") from exc
         except OSError as exc:
-            raise ArtifactError(f"Artifact upload failed: {exc}") from exc
+            raise ArtifactUploadError(f"Artifact upload failed: {exc}") from exc
 
 
 def _artifact_members(root: Path) -> list[Path]:

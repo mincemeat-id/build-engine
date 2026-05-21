@@ -4,6 +4,7 @@ import pytest
 
 from build_engine.agent.protocol import (
     INBOUND_MESSAGE_TYPES,
+    MAX_FRAME_BYTES,
     ProtocolError,
     decode_frame,
     last_sequences,
@@ -39,6 +40,13 @@ def test_log_frame_enforces_64_kib_payload_limit() -> None:
 
     with pytest.raises(ProtocolError, match="64 KiB"):
         new_envelope("log", payload)
+
+
+def test_outbound_frame_encoding_enforces_one_mib_limit() -> None:
+    envelope = new_envelope("status", {"detail": "x" * MAX_FRAME_BYTES})
+
+    with pytest.raises(ProtocolError, match="1 MiB"):
+        envelope.to_json()
 
 
 def test_last_sequences_accepts_welcome_cursor_map() -> None:

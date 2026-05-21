@@ -9,8 +9,13 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from build_engine.config import EngineConfig, EngineCredentials
-from build_engine.detect.framework import DetectionError, plan_build
-from build_engine.executor.artifact import ArtifactError, ArtifactUploadClient, package_output
+from build_engine.detect.framework import DetectionError, infer_generic_output, plan_build
+from build_engine.executor.artifact import (
+    ArtifactError,
+    ArtifactUploadClient,
+    ArtifactUploadError,
+    package_output,
+)
 from build_engine.executor.cache import CacheError, prepare_site_cache, prune_cache
 from build_engine.executor.docker_runner import (
     DockerError,
@@ -265,19 +270,30 @@ async def execute_job(
             raise BuildExecutionError("CANCELLED", "CANCELLED", "Build was cancelled")
         if result.timed_out:
             raise BuildExecutionError("EXEC_TIMEOUT", "TIMEOUT", "Build exceeded timeout")
+        if result.exit_code == 137:
+            raise BuildExecutionError(
+                "EXEC_OOM",
+                "EXEC_OOM",
+                "Build container was killed after exceeding its memory limit",
+            )
         if result.exit_code != 0:
             raise BuildExecutionError(
                 "USER_BUILD_FAILED",
                 "CONTAINER_EXIT",
                 f"Build container exited with code {result.exit_code}",
             )
+        _ensure_current_attempt(store, job)
+        output_dir = plan.output_dir
+        if output_dir is None:
+            output_dir = infer_generic_output(project_root)
+            await _status(publisher, job, "OUTPUT_DETECTED", {"output_dir": output_dir})
 
         await _status(publisher, job, "PACKAGING")
         package_started_at = time.perf_counter()
         artifact = await asyncio.to_thread(
             package_output,
             project_root=project_root,
-            output_dir=plan.output_dir,
+            output_dir=output_dir,
             destination=workspace.artifact_dir / "artifact.tar.gz",
             max_bytes=config.artifact_max_bytes,
         )
@@ -313,6 +329,9 @@ async def execute_job(
         store.transition(attempt_id=job.attempt_id, state="SUCCEEDED")
         await _metric(publisher, job, "jobs.duration_seconds", time.perf_counter() - job_started_at)
         await _ack(publisher, job, state="SUCCEEDED")
+    except ArtifactUploadError as exc:
+        retain_failed = True
+        raise BuildExecutionError("EXEC_INFRA", "STORAGE_FAILURE", str(exc)) from exc
     except (ArtifactError, DetectionError, WorkspaceError) as exc:
         retain_failed = True
         raise BuildExecutionError("USER_CONFIG_INVALID", type(exc).__name__, str(exc)) from exc
@@ -439,6 +458,15 @@ def _combined_command(install_command: str, build_command: str) -> str:
     if install_command:
         return f"{install_command} && {build_command}"
     return build_command
+
+
+def _ensure_current_attempt(store: SQLiteQueueStore, job: JobRecord) -> None:
+    if not store.is_current_attempt(build_job_id=job.build_job_id, attempt_id=job.attempt_id):
+        raise BuildExecutionError(
+            "STALE_ATTEMPT",
+            "STALE_ATTEMPT",
+            "Build attempt was superseded by a newer assignment",
+        )
 
 
 def _resolve_builder_image(image: str, payload: dict[str, Any]) -> str:
