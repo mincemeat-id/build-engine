@@ -551,13 +551,13 @@ Estimate: 4-6 days. Complexity: M.
 
 Estimate: 1 week. Complexity: L.
 
-- [ ] Implement `doctor` human output.
-- [ ] Implement `doctor --json`.
-- [ ] Add systemd unit and install script.
-- [ ] Add PyInstaller spec and hidden imports.
-- [ ] Add release artifact signing/checksum.
-- [ ] Add host setup docs and troubleshooting.
-- [ ] Run install/upgrade/drain smoke on Ubuntu 24.04.
+- [x] Implement `doctor` human output.
+- [x] Implement `doctor --json`.
+- [x] Add systemd unit and install script.
+- [x] Add PyInstaller spec and hidden imports.
+- [x] Add release artifact signing/checksum.
+- [x] Add host setup docs and troubleshooting.
+- [x] Run install/upgrade/drain smoke on Ubuntu 24.04.
 
 ### Stage 8 - End-to-End Hardening
 

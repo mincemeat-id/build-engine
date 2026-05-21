@@ -1,17 +1,38 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+from importlib.util import find_spec
 
+from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
 repo_root = Path(SPECPATH).parents[1]
-hiddenimports = collect_submodules("build_engine")
+optional_hiddenimports = [
+    "aiosqlite",
+    "httpx",
+    "websockets",
+    "pydantic",
+    "pydantic_settings",
+    "structlog",
+    "cryptography",
+]
+hiddenimports = sorted(
+    {
+        *collect_submodules("build_engine"),
+        *(name for name in optional_hiddenimports if find_spec(name) is not None),
+    }
+)
+datas = []
+for package in ("certifi", "tzdata"):
+    package_spec = find_spec(package)
+    if package_spec is not None and package_spec.submodule_search_locations is not None:
+        datas += collect_data_files(package)
 
 a = Analysis(
     [str(repo_root / "src" / "build_engine" / "main.py")],
-    pathex=[str(repo_root)],
+    pathex=[str(repo_root / "src")],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -32,7 +53,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,

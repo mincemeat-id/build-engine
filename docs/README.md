@@ -14,6 +14,8 @@ source of truth:
 - [Build-engine design](build-engine-design.md) - standalone agent binary,
   WSS protocol, Docker executor, local queue, cache, packaging, and host
   operations.
+- [Build-engine operations](build-engine-operations.md) - host setup,
+  install/upgrade, release artifacts, doctor diagnostics, and troubleshooting.
 - [Build-engine images design](build-engine-images-design.md) - builder image
   repository, image manifest contract, framework image matrix, publication,
   scanning, and rollback.

@@ -2,7 +2,6 @@
 
 import argparse
 import asyncio
-import json
 import shutil
 import sys
 from collections.abc import Callable, Sequence
@@ -17,6 +16,7 @@ from build_engine.agent.auth import (
 from build_engine.agent.heartbeat import HeartbeatSnapshot
 from build_engine.agent.job_loop import run_worker_pool
 from build_engine.agent.uplink import BuildEngineUplink
+from build_engine.cli.doctor import render_human, render_json, run_doctor
 from build_engine.config import DEFAULTS, EngineConfig, EngineCredentials, load_config
 from build_engine.executor.cache import cache_size_bytes, reset_cache
 from build_engine.metrics.collector import MetricsCollector
@@ -170,31 +170,12 @@ def _status(args: argparse.Namespace) -> int:
 
 def _doctor(args: argparse.Namespace) -> int:
     config = load_config(config_path=args.config, credentials_path=args.credentials)
-    checks: list[dict[str, object]] = []
-    status = "ok"
-    try:
-        credentials = validate_credentials_file(config.credentials_path)
-    except (AuthError, ValueError, FileNotFoundError) as exc:
-        credentials = None
-        status = "error"
-        checks.append({"name": "credentials", "ok": False, "detail": str(exc)})
-    else:
-        checks.append({"name": "credentials", "ok": True, "detail": str(config.credentials_path)})
-        checks.append({"name": "certificate", "ok": True, "detail": str(credentials.cert_path)})
-    payload = {
-        "version": __version__,
-        "protocol_version": 1,
-        "checks": checks,
-        "status": status,
-    }
+    report = run_doctor(config)
     if args.as_json:
-        print(json.dumps(payload, sort_keys=True))
+        print(render_json(report))
     else:
-        print(f"build-engine doctor: {status}")
-        for check in checks:
-            state = "ok" if check["ok"] else "fail"
-            print(f"- {check['name']}: {state} ({check['detail']})")
-    return 0 if credentials is not None else 1
+        print(render_human(report))
+    return 0 if report.status == "ok" else 1
 
 
 def _cache_reset(args: argparse.Namespace) -> int:

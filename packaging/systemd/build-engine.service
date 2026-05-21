@@ -1,0 +1,26 @@
+[Unit]
+Description=Mincemeat Build Engine
+Documentation=file:/usr/share/doc/build-engine/operations.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=build-engine
+Group=docker
+ExecStart=/usr/local/bin/build-engine serve --config /etc/mincemeat/build-engine/config.toml
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+StateDirectory=build-engine
+LogsDirectory=build-engine
+ProtectSystem=strict
+ReadWritePaths=/var/lib/build-engine /var/log/build-engine /etc/mincemeat/build-engine
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
