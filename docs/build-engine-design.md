@@ -525,16 +525,16 @@ Estimate: 1 week. Complexity: L.
 
 Estimate: 1.5-2 weeks. Complexity: XL.
 
-- [ ] Implement source download, sha256 verification, safe extract.
-- [ ] Implement workspace setup and cleanup.
-- [ ] Implement image pull by manifest.
-- [ ] Implement container run with resource limits and hardening.
-- [ ] Implement network guard setup and fail-closed behavior.
-- [ ] Implement stdout/stderr streaming with redaction.
-- [ ] Implement timeout/cancel SIGTERM->SIGKILL.
-- [ ] Implement output validation and artifact packaging.
-- [ ] Implement presigned upload flow.
-- [ ] Add integration tests with Docker.
+- [x] Implement source download, sha256 verification, safe extract.
+- [x] Implement workspace setup and cleanup.
+- [x] Implement image pull by manifest.
+- [x] Implement container run with resource limits and hardening.
+- [x] Implement network guard setup and fail-closed behavior.
+- [x] Implement stdout/stderr streaming with redaction.
+- [x] Implement timeout/cancel SIGTERM->SIGKILL.
+- [x] Implement output validation and artifact packaging.
+- [x] Implement presigned upload flow.
+- [x] Add integration tests with Docker.
 
 ### Stage 6 - Cache And Metrics
 

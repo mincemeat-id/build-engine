@@ -5,6 +5,7 @@ from typing import Any
 
 from build_engine.agent.protocol import ProtocolError
 from build_engine.agent.uplink import CommandResult
+from build_engine.executor.cache import reset_cache
 from build_engine.queue.store import SQLiteQueueStore
 
 
@@ -43,11 +44,12 @@ class SQLiteCommandHandlers:
         return CommandResult(state="DRAINING")
 
     async def cache_reset(self, payload: dict[str, Any]) -> CommandResult:
-        """Record the requested cache reset scope for later cache implementation."""
+        """Reset the requested local cache scope."""
 
         site_id = payload.get("site_id")
         if site_id is not None and not isinstance(site_id, str):
             raise ProtocolError("cache.reset site_id must be a string or null")
+        reset_cache(self.store.path.parent, site_id=site_id)
         if self.cache_reset_scopes is None:
             self.cache_reset_scopes = []
         self.cache_reset_scopes.append(site_id)

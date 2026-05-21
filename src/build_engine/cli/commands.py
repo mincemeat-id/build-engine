@@ -5,7 +5,7 @@ import asyncio
 import json
 import shutil
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from build_engine import __version__
 from build_engine.agent.auth import (
@@ -15,8 +15,10 @@ from build_engine.agent.auth import (
     validate_credentials_file,
 )
 from build_engine.agent.heartbeat import HeartbeatSnapshot
+from build_engine.agent.job_loop import run_worker_pool
 from build_engine.agent.uplink import BuildEngineUplink
-from build_engine.config import DEFAULTS, load_config
+from build_engine.config import DEFAULTS, EngineConfig, EngineCredentials, load_config
+from build_engine.executor.cache import reset_cache
 from build_engine.queue.handlers import SQLiteCommandHandlers
 from build_engine.queue.store import SQLiteEventOutbox, SQLiteQueueStore
 
@@ -77,6 +79,8 @@ def _build_parser() -> argparse.ArgumentParser:
     cache = subparsers.add_parser("cache", help="local cache operations")
     cache_subparsers = cache.add_subparsers(dest="cache_command")
     cache_reset = cache_subparsers.add_parser("reset", help="reset local build cache")
+    cache_reset.add_argument("--config", default="/etc/mincemeat/build-engine/config.toml")
+    cache_reset.add_argument("--credentials", default=None)
     cache_reset.add_argument("--site-id")
     cache_reset.set_defaults(handler=_cache_reset)
 
@@ -118,15 +122,7 @@ def _serve(args: argparse.Namespace) -> int:
         )
 
     try:
-        asyncio.run(
-            BuildEngineUplink(
-                config,
-                credentials,
-                event_spool=SQLiteEventOutbox(store),
-                command_handlers=SQLiteCommandHandlers(store),
-                heartbeat_provider=heartbeat_snapshot,
-            ).run_forever()
-        )
+        asyncio.run(_run_service(config, credentials, store, heartbeat_snapshot))
     except KeyboardInterrupt:
         print("build-engine serve: stopped")
     return 0
@@ -201,8 +197,10 @@ def _doctor(args: argparse.Namespace) -> int:
 
 
 def _cache_reset(args: argparse.Namespace) -> int:
+    config = load_config(config_path=args.config, credentials_path=args.credentials)
     scope = args.site_id or "all-sites"
-    print(f"cache reset scaffold ready; scope={scope}")
+    reset_cache(config.state_dir, site_id=args.site_id)
+    print(f"cache reset complete; scope={scope}")
     return 0
 
 
@@ -227,3 +225,31 @@ def _session_refresh(args: argparse.Namespace) -> int:
         f"engine_id={credentials.engine_id} expires_at={credentials.session_jwt_expires_at}",
     )
     return 0
+
+
+async def _run_service(
+    config: EngineConfig,
+    credentials: EngineCredentials,
+    store: SQLiteQueueStore,
+    heartbeat_snapshot: Callable[[], HeartbeatSnapshot],
+) -> None:
+    uplink = BuildEngineUplink(
+        config,
+        credentials,
+        event_spool=SQLiteEventOutbox(store),
+        command_handlers=SQLiteCommandHandlers(store),
+        heartbeat_provider=heartbeat_snapshot,
+    )
+    worker_task = asyncio.create_task(
+        run_worker_pool(
+            store=store,
+            publisher=uplink,
+            config=config,
+            credentials=credentials,
+        )
+    )
+    try:
+        await uplink.run_forever()
+    finally:
+        worker_task.cancel()
+        await asyncio.gather(worker_task, return_exceptions=True)

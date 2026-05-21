@@ -115,8 +115,12 @@ def test_next_export_without_export_config_returns_guidance() -> None:
     assert plan.guidance[0].to_dict()["code"] == "NEXTJS_REQUIRES_EXPORT"
 
 
-def test_generic_output_inference_uses_first_index_html_candidate() -> None:
-    assert infer_generic_output(FIXTURES / "generic-output") == "dist"
+def test_generic_output_inference_uses_first_index_html_candidate(tmp_path: Path) -> None:
+    output = tmp_path / "dist"
+    output.mkdir()
+    (output / "index.html").write_text("<!doctype html>")
+
+    assert infer_generic_output(tmp_path) == "dist"
 
 
 def test_generic_output_inference_returns_guidance_when_missing() -> None:
