@@ -49,6 +49,7 @@ class EngineConfig:
     state_dir: Path = DEFAULT_STATE_DIR
     image_manifest_version: str = "1.0.0"
     images: tuple[str, ...] = ("node:20", "node:22", "bun:1", "hugo:latest")
+    network_blocklist: tuple[str, ...] = ()
     proto_version: int = 1
     os: str = "linux"
     arch: str = "amd64"
@@ -103,6 +104,10 @@ def load_config(
         values["images"] = tuple(str(item) for item in values["images"])
     elif isinstance(values.get("images"), str):
         values["images"] = tuple(part.strip() for part in str(values["images"]).split(",") if part)
+    if isinstance(values.get("network_blocklist"), list):
+        values["network_blocklist"] = tuple(str(item) for item in values["network_blocklist"])
+    elif isinstance(values.get("network_blocklist"), str):
+        values["network_blocklist"] = _split_csv(str(values["network_blocklist"]))
 
     return EngineConfig(**values)
 
@@ -181,6 +186,7 @@ def _config_defaults() -> dict[str, Any]:
         "state_dir": DEFAULT_STATE_DIR,
         "image_manifest_version": "1.0.0",
         "images": ("node:20", "node:22", "bun:1", "hugo:latest"),
+        "network_blocklist": (),
         "proto_version": 1,
         "os": "linux",
         "arch": "amd64",
@@ -217,8 +223,8 @@ def _coerce_env_value(key: str, value: str) -> object:
         return int(value)
     if key == "container_cpus":
         return float(value)
-    if key == "images":
-        return tuple(part.strip() for part in value.split(",") if part.strip())
+    if key in {"images", "network_blocklist"}:
+        return _split_csv(value)
     if key.endswith("_path") or key.endswith("_dir"):
         return Path(value)
     return value
@@ -232,3 +238,7 @@ def _toml_string(value: str) -> str:
     import json
 
     return json.dumps(value)
+
+
+def _split_csv(value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in value.split(",") if part.strip())

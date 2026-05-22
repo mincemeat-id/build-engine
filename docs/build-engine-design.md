@@ -281,9 +281,36 @@ blocks:
 - Core platform private networks for MariaDB, Redis, MinIO, Nomad, backend
   private service addresses.
 
-Implementation can use Docker bridge rules, `--add-host` avoidance, iptables
-owner/container chains, or an engine-managed bridge network. The engine must
-fail closed if network guard setup fails.
+Implementation uses an engine-managed Docker bridge named
+`build-engine-guard` with Linux bridge interface `be-guard0`. Every build
+container is started with `--network build-engine-guard`.
+
+The engine installs an iptables chain named `BUILD_ENGINE_GUARD` and attaches
+it from `DOCKER-USER` for traffic forwarded from `be-guard0`. The chain drops
+egress to:
+
+- `169.254.0.0/16`.
+- RFC1918 ranges: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`.
+- Alibaba metadata IP `100.100.100.200/32`.
+- The Docker gateway discovered from `docker network inspect`.
+- Operator/coreapp supplied `network_blocklist` entries.
+
+Operators can extend the deny set with `network_blocklist` in config TOML,
+`BUILD_ENGINE_NETWORK_BLOCKLIST`, or the service/doctor CLI flag:
+
+```bash
+build-engine serve --network-blocklist 203.0.113.0/24,198.51.100.7
+build-engine doctor --network-blocklist 203.0.113.0/24
+```
+
+Coreapp may also include `network_blocklist` on `job.assign` as either a
+comma-separated string or an array of CIDR/IP strings. Job-level entries are
+added to the engine-local operator entries for that attempt.
+
+The guard is fail-closed. If the Docker bridge, gateway discovery, CIDR
+validation, or iptables rule installation fails, the engine aborts execution
+before `docker run` and reports `error_class=EXEC_INFRA` with
+`error_code=NETWORK_GUARD`.
 
 ## Cache
 

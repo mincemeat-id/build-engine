@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import subprocess
 import tarfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,7 +29,11 @@ from build_engine.executor.docker_runner import (
     resolve_image_reference,
     run_container,
 )
-from build_engine.executor.network import DockerNetworkGuard
+from build_engine.executor.network import (
+    DockerNetworkGuard,
+    ensure_network_guard,
+    normalize_blocklist,
+)
 from build_engine.executor.stream import SecretRedactor, _frame_chunks
 from build_engine.executor.workspace import (
     WorkspaceError,
@@ -107,6 +112,70 @@ def test_docker_run_args_include_resource_and_hardening_flags(tmp_path: Path) ->
     assert "no-new-privileges" in args
     assert "--network" in args
     assert "/var/run/docker.sock" not in " ".join(args)
+
+
+def test_network_guard_creates_bridge_and_installs_drop_rules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    inspect_payload = json.dumps(
+        [
+            {
+                "Name": "build-engine-guard",
+                "Id": "abcdef1234567890",
+                "Options": {"com.docker.network.bridge.name": "be-guard0"},
+                "IPAM": {"Config": [{"Gateway": "172.31.255.1"}]},
+            }
+        ]
+    )
+    inspect_calls = 0
+
+    def fake_which(binary: str) -> str:
+        return f"/usr/sbin/{binary}"
+
+    def fake_run(
+        command: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal inspect_calls
+        commands.append(command)
+        if command[:3] == ["docker", "network", "inspect"]:
+            inspect_calls += 1
+            if inspect_calls == 1:
+                return subprocess.CompletedProcess(command, 1, "", "not found")
+            return subprocess.CompletedProcess(command, 0, inspect_payload, "")
+        if command[:3] == ["iptables", "-C", "DOCKER-USER"]:
+            return subprocess.CompletedProcess(command, 1, "", "missing")
+        if command[:3] == ["iptables", "-C", "BUILD_ENGINE_GUARD"]:
+            return subprocess.CompletedProcess(command, 1, "", "missing")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("build_engine.executor.network.shutil.which", fake_which)
+    monkeypatch.setattr("build_engine.executor.network.subprocess.run", fake_run)
+
+    guard = ensure_network_guard(blocklist=("203.0.113.0/24",))
+
+    assert guard.name == "build-engine-guard"
+    assert guard.bridge_name == "be-guard0"
+    assert guard.gateway == "172.31.255.1"
+    assert commands[1][:3] == ["docker", "network", "create"]
+    expected_commands = (
+        ["iptables", "-I", "DOCKER-USER", "1", "-i", "be-guard0", "-j", "BUILD_ENGINE_GUARD"],
+        ["iptables", "-I", "BUILD_ENGINE_GUARD", "1", "-d", "169.254.0.0/16", "-j", "DROP"],
+        ["iptables", "-I", "BUILD_ENGINE_GUARD", "1", "-d", "203.0.113.0/24", "-j", "DROP"],
+        ["iptables", "-I", "BUILD_ENGINE_GUARD", "1", "-d", "172.31.255.1/32", "-j", "DROP"],
+    )
+    for expected in expected_commands:
+        assert expected in commands
+
+
+def test_network_blocklist_normalization_rejects_invalid_entries() -> None:
+    assert normalize_blocklist(("203.0.113.7", "203.0.113.0/24")) == (
+        "203.0.113.7/32",
+        "203.0.113.0/24",
+    )
+    with pytest.raises(RuntimeError, match="Invalid network blocklist"):
+        normalize_blocklist(("not-a-cidr",))
 
 
 def test_image_manifest_resolves_tag_to_digest_reference(tmp_path: Path) -> None:
@@ -338,6 +407,42 @@ async def _docker_runner_integration_smoke(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert (tmp_path / "dist" / "index.html").read_text().strip() == "ok"
+
+
+@pytest.mark.skipif(
+    os.environ.get("BUILD_ENGINE_DOCKER_TESTS") != "1",
+    reason="real Docker smoke is opt-in to avoid pulling images during default verify",
+)
+def test_network_guard_blocks_metadata_endpoint_with_real_docker(tmp_path: Path) -> None:
+    del tmp_path
+    guard = ensure_network_guard()
+    image = "curlimages/curl:8.10.1"
+    pull_image(image, timeout_seconds=120)
+
+    result = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            guard.name,
+            "--entrypoint",
+            "curl",
+            image,
+            "-fsS",
+            "--connect-timeout",
+            "1",
+            "--max-time",
+            "2",
+            "http://169.254.169.254/",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert result.returncode != 0
 
 
 class _BytesReader:

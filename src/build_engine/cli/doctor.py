@@ -118,7 +118,7 @@ def run_doctor(
             _check_disk_space(config),
             _check_writable_paths(config),
             _check_sqlite_integrity(config.state_dir / "queue.sqlite"),
-            _check_network_guard(timeout_seconds=timeout_seconds),
+            _check_network_guard(config, timeout_seconds=timeout_seconds),
         )
     )
 
@@ -282,16 +282,16 @@ def _check_sqlite_integrity(queue_path: Path) -> DoctorCheck:
     return _ok("sqlite_integrity", "ok", {"path": str(queue_path)})
 
 
-def _check_network_guard(*, timeout_seconds: float) -> DoctorCheck:
+def _check_network_guard(config: EngineConfig, *, timeout_seconds: float) -> DoctorCheck:
     del timeout_seconds
     try:
-        guard = ensure_network_guard()
+        guard = ensure_network_guard(blocklist=config.network_blocklist)
     except (NetworkGuardError, FileNotFoundError, OSError) as exc:
         return _fail("network_guard", str(exc))
     return _ok(
         "network_guard",
         f"Docker network {guard.name} is available",
-        {"network": guard.name},
+        {"network": guard.name, "blocklist": list(guard.blocklist)},
     )
 
 

@@ -224,7 +224,10 @@ async def execute_job(
             "docker.image_pull_seconds",
             time.perf_counter() - image_pull_started_at,
         )
-        network_guard = await asyncio.to_thread(ensure_network_guard)
+        network_guard = await asyncio.to_thread(
+            ensure_network_guard,
+            blocklist=_network_blocklist(config, payload),
+        )
         cancel_event = asyncio.Event()
         cancel_monitor = asyncio.create_task(_monitor_cancel(store, job, cancel_event))
         command = _combined_command(plan.install_command, plan.build_command)
@@ -345,7 +348,7 @@ async def execute_job(
         raise BuildExecutionError("EXEC_INFRA", type(exc).__name__, str(exc)) from exc
     except NetworkGuardError as exc:
         retain_failed = True
-        raise BuildExecutionError("EXEC_INFRA", type(exc).__name__, str(exc)) from exc
+        raise BuildExecutionError("EXEC_INFRA", "NETWORK_GUARD", str(exc)) from exc
     finally:
         if cancel_monitor is not None:
             cancel_monitor.cancel()
@@ -495,6 +498,18 @@ def _secret_env(payload: dict[str, Any]) -> dict[str, str]:
             continue
         pairs[key] = value
     return pairs
+
+
+def _network_blocklist(config: EngineConfig, payload: dict[str, Any]) -> tuple[str, ...]:
+    entries = list(config.network_blocklist)
+    raw = payload.get("network_blocklist", ())
+    if isinstance(raw, str):
+        entries.extend(part.strip() for part in raw.split(",") if part.strip())
+    elif isinstance(raw, list | tuple):
+        entries.extend(item for item in raw if isinstance(item, str) and item.strip())
+    elif raw:
+        raise WorkspaceError("payload network_blocklist must be a string or list of strings")
+    return tuple(entries)
 
 
 def _cache_enabled(payload: dict[str, Any]) -> bool:

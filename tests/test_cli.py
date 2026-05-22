@@ -10,6 +10,7 @@ from pytest import CaptureFixture, MonkeyPatch
 from build_engine import __version__
 from build_engine.cli.commands import main
 from build_engine.cli.doctor import DoctorCheck, DoctorReport
+from build_engine.config import EngineConfig
 
 
 def test_version_flag_exits_cleanly(capsys: CaptureFixture[str]) -> None:
@@ -102,6 +103,43 @@ def test_doctor_human_output(
     captured = capsys.readouterr()
     assert "build-engine doctor: ok" in captured.out
     assert "- version: OK" in captured.out
+
+
+def test_doctor_accepts_network_blocklist_flag(
+    capsys: CaptureFixture[str],
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured_config: EngineConfig | None = None
+
+    def fake_doctor(config: EngineConfig, **_kwargs: object) -> DoctorReport:
+        nonlocal captured_config
+        captured_config = config
+        return DoctorReport(
+            version=__version__,
+            protocol_version=1,
+            status="ok",
+            checks=(DoctorCheck(name="network_guard", status="ok", detail="ready"),),
+        )
+
+    monkeypatch.setattr("build_engine.cli.commands.run_doctor", fake_doctor)
+
+    exit_code = main(
+        [
+            "doctor",
+            "--config",
+            str(tmp_path / "missing.toml"),
+            "--credentials",
+            str(tmp_path / "credentials.toml"),
+            "--network-blocklist",
+            "203.0.113.0/24,198.51.100.7",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured_config is not None
+    assert captured_config.network_blocklist == ("203.0.113.0/24", "198.51.100.7")
+    assert "network_guard" in capsys.readouterr().out
 
 
 def test_serve_reports_missing_credentials(

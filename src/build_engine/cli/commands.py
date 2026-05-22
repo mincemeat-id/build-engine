@@ -43,6 +43,12 @@ def _build_parser() -> argparse.ArgumentParser:
     serve = subparsers.add_parser("serve", help="run the agent service")
     serve.add_argument("--config", default="/etc/mincemeat/build-engine/config.toml")
     serve.add_argument("--credentials", default=None)
+    serve.add_argument(
+        "--network-blocklist",
+        action="append",
+        default=None,
+        help="comma-separated CIDR/IP deny-list entries to add to the build network guard",
+    )
     serve.set_defaults(handler=_serve)
 
     register = subparsers.add_parser("register", help="register this engine with coreapp")
@@ -62,6 +68,12 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="run local diagnostics")
     doctor.add_argument("--config", default="/etc/mincemeat/build-engine/config.toml")
     doctor.add_argument("--credentials", default=None)
+    doctor.add_argument(
+        "--network-blocklist",
+        action="append",
+        default=None,
+        help="comma-separated CIDR/IP deny-list entries to add to the network guard check",
+    )
     doctor.add_argument("--json", action="store_true", dest="as_json")
     doctor.set_defaults(handler=_doctor)
 
@@ -98,7 +110,11 @@ def _help(args: argparse.Namespace) -> int:
 
 
 def _serve(args: argparse.Namespace) -> int:
-    config = load_config(config_path=args.config, credentials_path=args.credentials)
+    config = load_config(
+        config_path=args.config,
+        credentials_path=args.credentials,
+        overrides=_network_blocklist_override(args.network_blocklist),
+    )
     try:
         credentials = validate_credentials_file(config.credentials_path)
     except (AuthError, ValueError, FileNotFoundError) as exc:
@@ -164,7 +180,11 @@ def _status(args: argparse.Namespace) -> int:
 
 
 def _doctor(args: argparse.Namespace) -> int:
-    config = load_config(config_path=args.config, credentials_path=args.credentials)
+    config = load_config(
+        config_path=args.config,
+        credentials_path=args.credentials,
+        overrides=_network_blocklist_override(args.network_blocklist),
+    )
     report = run_doctor(config)
     if args.as_json:
         print(render_json(report))
@@ -202,6 +222,13 @@ def _session_refresh(args: argparse.Namespace) -> int:
         f"engine_id={credentials.engine_id} expires_at={credentials.session_jwt_expires_at}",
     )
     return 0
+
+
+def _network_blocklist_override(values: list[str] | None) -> dict[str, object | None]:
+    if values is None:
+        return {}
+    entries = tuple(part.strip() for value in values for part in value.split(",") if part.strip())
+    return {"network_blocklist": entries}
 
 
 async def _run_service(

@@ -20,7 +20,7 @@ from build_engine.agent.job_loop import BuildExecutionError, execute_job
 from build_engine.config import EngineConfig, EngineCredentials
 from build_engine.executor.cache import site_cache
 from build_engine.executor.docker_runner import ContainerResult, DockerRunSpec
-from build_engine.executor.network import DockerNetworkGuard
+from build_engine.executor.network import DockerNetworkGuard, NetworkGuardError
 from build_engine.queue.handlers import SQLiteCommandHandlers
 from build_engine.queue.leases import acquire_queue_lease
 from build_engine.queue.store import SQLiteQueueStore
@@ -99,6 +99,67 @@ def test_failure_drills_cover_cancel_timeout_oom_stale_storage_engine_lost_and_c
     tmp_path: Path,
 ) -> None:
     asyncio.run(_failure_drills(monkeypatch, tmp_path))
+
+
+def test_network_guard_failure_fails_closed_with_contract_error_code(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    asyncio.run(_network_guard_failure_fails_closed(monkeypatch, tmp_path))
+
+
+async def _network_guard_failure_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    server = _CoreappServer()
+    server.start()
+    try:
+        store, job, publisher, credentials = _prepare_job(
+            tmp_path,
+            fixture="vite-vanilla",
+            backend_url=server.base_url,
+        )
+        job.payload["network_blocklist"] = ["198.51.100.0/24"]
+
+        def fake_pull_image(image: str) -> None:
+            assert image
+
+        def fake_network_guard(*, blocklist: tuple[str, ...] = ()) -> DockerNetworkGuard:
+            assert blocklist == ("203.0.113.0/24", "198.51.100.0/24")
+            raise NetworkGuardError("iptables unavailable")
+
+        async def fake_run_container(
+            spec: DockerRunSpec,
+            *,
+            publish_log: Callable[[str, str], Awaitable[None]],
+            cancel_event: asyncio.Event | None = None,
+        ) -> ContainerResult:
+            del spec, publish_log, cancel_event
+            raise AssertionError("container must not run without the network guard")
+
+        monkeypatch.setattr(job_loop, "pull_image", fake_pull_image)
+        monkeypatch.setattr(job_loop, "ensure_network_guard", fake_network_guard)
+        monkeypatch.setattr(job_loop, "run_container", fake_run_container)
+
+        with pytest.raises(BuildExecutionError) as raised:
+            await execute_job(
+                job,
+                store=store,
+                publisher=publisher,
+                config=EngineConfig(
+                    state_dir=tmp_path,
+                    build_timeout_seconds=10,
+                    network_blocklist=("203.0.113.0/24",),
+                ),
+                credentials=credentials,
+            )
+
+        assert raised.value.error_class == "EXEC_INFRA"
+        assert raised.value.error_code == "NETWORK_GUARD"
+        assert not server.put_body
+    finally:
+        server.stop()
 
 
 async def _failure_drills(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -254,7 +315,8 @@ def _patch_executor(
     def fake_pull_image(image: str) -> None:
         assert image
 
-    def fake_network_guard() -> DockerNetworkGuard:
+    def fake_network_guard(*, blocklist: tuple[str, ...] = ()) -> DockerNetworkGuard:
+        assert blocklist == ()
         return DockerNetworkGuard(name="none")
 
     async def fake_run_container(
