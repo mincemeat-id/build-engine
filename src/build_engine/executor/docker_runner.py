@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import os
 import subprocess
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+import tempfile
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -55,7 +58,7 @@ class DockerRunSpec:
     network_guard: DockerNetworkGuard
     environment: Mapping[str, str] = field(default_factory=dict)
     cache_mounts: Sequence[CacheMount] = ()
-    secrets: Sequence[str] = ()
+    secret_env: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +132,12 @@ def pull_image(image: str, *, docker_bin: str = "docker", timeout_seconds: float
         raise DockerError(f"Docker image pull failed for {image}: {detail}")
 
 
-def docker_run_args(spec: DockerRunSpec, *, docker_bin: str = "docker") -> list[str]:
+def docker_run_args(
+    spec: DockerRunSpec,
+    *,
+    docker_bin: str = "docker",
+    env_file_path: Path | None = None,
+) -> list[str]:
     """Build the hardened `docker run` argv for a build command."""
 
     args = [
@@ -164,8 +172,42 @@ def docker_run_args(spec: DockerRunSpec, *, docker_bin: str = "docker") -> list[
         args.extend(["--volume", f"{mount.host_path.resolve()}:{mount.container_path}:rw"])
     for key, value in sorted(spec.environment.items()):
         args.extend(["--env", f"{key}={value}"])
+    if env_file_path is not None:
+        args.extend(["--env-file", str(env_file_path)])
     args.extend([spec.image, "sh", "-lc", spec.command])
     return args
+
+
+def _validate_secret_env_key(key: str) -> None:
+    if not key or not key.replace("_", "").isalnum() or key[0].isdigit():
+        raise DockerError(f"Invalid secret env var name: {key!r}")
+
+
+def _format_env_file(secret_env: Mapping[str, str]) -> str:
+    lines: list[str] = []
+    for key, value in sorted(secret_env.items()):
+        _validate_secret_env_key(key)
+        if "\n" in value or "\r" in value:
+            raise DockerError(f"Secret env var {key!r} contains a newline")
+        lines.append(f"{key}={value}")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+@contextlib.contextmanager
+def _materialize_env_file(secret_env: Mapping[str, str]) -> Iterator[Path | None]:
+    if not secret_env:
+        yield None
+        return
+    fd, raw_path = tempfile.mkstemp(prefix="build-engine-env-", suffix=".env")
+    path = Path(raw_path)
+    try:
+        os.chmod(path, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(_format_env_file(secret_env))
+        yield path
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
 
 
 async def run_container(
@@ -177,25 +219,26 @@ async def run_container(
 ) -> ContainerResult:
     """Run a Docker container with timeout and SIGTERM->SIGKILL cancellation."""
 
-    process = await asyncio.create_subprocess_exec(
-        *docker_run_args(spec, docker_bin=docker_bin),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    if process.stdout is None or process.stderr is None:
-        raise DockerError("Docker subprocess did not expose stdout/stderr")
+    with _materialize_env_file(spec.secret_env) as env_file_path:
+        process = await asyncio.create_subprocess_exec(
+            *docker_run_args(spec, docker_bin=docker_bin, env_file_path=env_file_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        if process.stdout is None or process.stderr is None:
+            raise DockerError("Docker subprocess did not expose stdout/stderr")
 
-    redactor = SecretRedactor(spec.secrets)
-    stdout_task = asyncio.create_task(
-        pump_stream(process.stdout, stream="stdout", redactor=redactor, publish=publish_log)
-    )
-    stderr_task = asyncio.create_task(
-        pump_stream(process.stderr, stream="stderr", redactor=redactor, publish=publish_log)
-    )
-    try:
-        result = await _wait_for_process(process, spec=spec, cancel_event=cancel_event)
-    finally:
-        await asyncio.gather(stdout_task, stderr_task)
+        redactor = SecretRedactor(spec.secret_env.values())
+        stdout_task = asyncio.create_task(
+            pump_stream(process.stdout, stream="stdout", redactor=redactor, publish=publish_log)
+        )
+        stderr_task = asyncio.create_task(
+            pump_stream(process.stderr, stream="stderr", redactor=redactor, publish=publish_log)
+        )
+        try:
+            result = await _wait_for_process(process, spec=spec, cancel_event=cancel_event)
+        finally:
+            await asyncio.gather(stdout_task, stderr_task)
     return result
 
 

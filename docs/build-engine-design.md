@@ -347,12 +347,42 @@ The first directory containing `index.html` wins and is reported to coreapp as
 
 ## Build Secrets
 
+### Contract
+
+Coreapp passes secrets to the engine inline on the `job.assign` payload under
+the `secrets` field, as a flat `KEY: VALUE` JSON object:
+
+```json
+{
+  "secrets": {
+    "NPM_TOKEN": "npm_xxxxxxxxxxxx",
+    "SENTRY_AUTH_TOKEN": "sntrys_xxxxxxxxxxxx"
+  }
+}
+```
+
+Rules:
+
+- Keys MUST be non-empty strings; valid env var names are `[A-Za-z_][A-Za-z0-9_]*`.
+  Engine rejects (skips) any other key.
+- Values MUST be non-empty strings; non-string and empty values are ignored.
+- Values MUST NOT contain newline characters (`\n`, `\r`).
+- Secrets are scoped to a single attempt and never reused across attempts.
+
+### Handling
+
 - Secrets arrive in memory in `job.assign`.
-- Engine never persists secret values.
-- Container receives secrets as env vars.
-- Log redaction replaces exact secret values before outbound log frames.
-- Redaction is best effort; transformed or encoded values may leak if user
-  code prints them.
+- Engine never persists secret values to disk except for a transient
+  `mkstemp`-created env file (mode `0600`, randomized name) that is fed to
+  `docker run --env-file` and unlinked as soon as the container exits.
+- Secrets are passed via `--env-file`, never `--env`, to keep `KEY=VALUE`
+  pairs off the host process listing (`ps`, `/proc/<pid>/cmdline`).
+- The container receives each pair as a regular environment variable
+  (`os.environ["NPM_TOKEN"]`).
+- Log redaction is seeded with the same secret values and replaces every
+  exact occurrence with `[REDACTED]` before outbound log frames.
+- Redaction is best effort; transformed or encoded values (base64, URL
+  encoding, partial slices) may leak if user code prints them.
 
 ## Metrics
 

@@ -260,7 +260,7 @@ async def execute_job(
                 config=config,
                 network_guard=network_guard,
                 cache_mounts=cache.mounts,
-                secrets=_secret_values(payload),
+                secret_env=_secret_env(payload),
             ),
             publish_log=lambda stream, data: _log(publisher, job, stream, data),
             cancel_event=cancel_event,
@@ -476,11 +476,25 @@ def _resolve_builder_image(image: str, payload: dict[str, Any]) -> str:
     return resolve_image_reference(image, manifest=load_image_manifest(manifest_path))
 
 
-def _secret_values(payload: dict[str, Any]) -> tuple[str, ...]:
+def _secret_env(payload: dict[str, Any]) -> dict[str, str]:
+    """Return the `KEY: VALUE` mapping of build secrets from a job payload.
+
+    Only string-typed, non-empty entries with string keys are kept. The
+    returned mapping is used both to inject env vars into the build container
+    via `--env-file` and to seed the log redactor with exact secret values.
+    """
+
     raw = payload.get("secrets", {})
     if not isinstance(raw, dict):
-        return ()
-    return tuple(str(value) for value in raw.values() if isinstance(value, str) and value)
+        return {}
+    pairs: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key:
+            continue
+        if not isinstance(value, str) or not value:
+            continue
+        pairs[key] = value
+    return pairs
 
 
 def _cache_enabled(payload: dict[str, Any]) -> bool:

@@ -18,7 +18,10 @@ from build_engine.config import EngineConfig
 from build_engine.executor.artifact import ArtifactUploadClient, package_output
 from build_engine.executor.cache import reset_cache, site_cache
 from build_engine.executor.docker_runner import (
+    DockerError,
     DockerRunSpec,
+    _format_env_file,
+    _materialize_env_file,
     docker_run_args,
     load_image_manifest,
     pull_image,
@@ -135,6 +138,100 @@ def test_secret_redactor_replaces_exact_secret_values() -> None:
     redactor = SecretRedactor(["abc123", "token"])
 
     assert redactor.redact("token=abc123") == "[REDACTED]=[REDACTED]"
+
+
+def test_docker_run_args_uses_env_file_and_keeps_secrets_off_argv(tmp_path: Path) -> None:
+    spec = DockerRunSpec(
+        image="node:22",
+        project_root=tmp_path,
+        command="env",
+        config=EngineConfig(state_dir=tmp_path),
+        network_guard=DockerNetworkGuard(name="build-engine-guard"),
+        secret_env={"MY_SECRET": "s3cret-value", "API_TOKEN": "tok-abc"},
+    )
+    env_file_path = tmp_path / "env-file"
+
+    args = docker_run_args(spec, env_file_path=env_file_path)
+
+    joined = " ".join(args)
+    assert "--env-file" in args
+    assert str(env_file_path) in args
+    assert "s3cret-value" not in joined
+    assert "tok-abc" not in joined
+
+
+def test_format_env_file_writes_sorted_key_equals_value_lines() -> None:
+    contents = _format_env_file({"B_TOKEN": "two", "A_TOKEN": "one"})
+
+    assert contents == "A_TOKEN=one\nB_TOKEN=two\n"
+
+
+def test_format_env_file_rejects_invalid_keys_and_newlines() -> None:
+    with pytest.raises(DockerError, match="Invalid secret env var name"):
+        _format_env_file({"1BAD": "value"})
+    with pytest.raises(DockerError, match="contains a newline"):
+        _format_env_file({"OK": "first\nsecond"})
+
+
+def test_materialize_env_file_writes_secure_temp_and_cleans_up() -> None:
+    with _materialize_env_file({"FOO": "bar"}) as path:
+        assert path is not None
+        assert path.exists()
+        assert path.read_text(encoding="utf-8") == "FOO=bar\n"
+        assert (path.stat().st_mode & 0o777) == 0o600
+    assert path is not None
+    assert not path.exists()
+
+
+def test_materialize_env_file_yields_none_when_empty() -> None:
+    with _materialize_env_file({}) as path:
+        assert path is None
+
+
+def test_run_container_injects_secret_env_and_redacts_log_stream(tmp_path: Path) -> None:
+    asyncio.run(_run_container_with_fake_docker(tmp_path))
+
+
+async def _run_container_with_fake_docker(tmp_path: Path) -> None:
+    fake_docker = tmp_path / "fake-docker"
+    fake_docker.write_text(
+        "#!/bin/sh\n"
+        "# Parse out --env-file path then cat it so the secret reaches the\n"
+        "# captured stdout, exercising the redactor end-to-end.\n"
+        'while [ "$#" -gt 0 ]; do\n'
+        '  case "$1" in\n'
+        '    --env-file) shift; cat "$1"; shift ;;\n'
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n"
+        "exit 0\n"
+    )
+    fake_docker.chmod(0o755)
+    logs: list[tuple[str, str]] = []
+
+    async def publish(stream: str, data: str) -> None:
+        logs.append((stream, data))
+
+    spec = DockerRunSpec(
+        image="busybox:latest",
+        project_root=tmp_path,
+        command="env",
+        config=EngineConfig(
+            state_dir=tmp_path / "state",
+            build_timeout_seconds=10,
+            sigterm_grace_seconds=1,
+        ),
+        network_guard=DockerNetworkGuard(name="none"),
+        secret_env={"MY_SECRET": "super-secret-value"},
+    )
+
+    result = await run_container(spec, publish_log=publish, docker_bin=str(fake_docker))
+
+    assert result.exit_code == 0
+    stdout = "".join(data for stream, data in logs if stream == "stdout")
+    assert "MY_SECRET=" in stdout
+    assert "super-secret-value" not in stdout
+    assert "[REDACTED]" in stdout
 
 
 def test_log_frame_chunks_stay_under_protocol_byte_limit() -> None:
