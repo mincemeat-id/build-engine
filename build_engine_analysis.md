@@ -140,9 +140,9 @@ Effort estimates are calendar hours for one senior engineer with full context.
 
 ### 1.3 Verify 3.14 grammar everywhere & fix doctor bug
 
-- [ ] **S · 1h** Run `uv run python -m compileall -j0 src` in the actual
+- [x] **S · 1h** Run `uv run python -m compileall -j0 src` in the actual
   PyInstaller build container and confirm zero `SyntaxError`s on PEP 758.
-- [ ] **S · 30m** Add a unit test for `_clock_skew_seconds` with both a valid
+- [x] **S · 30m** Add a unit test for `_clock_skew_seconds` with both a valid
   RFC date header and a malformed one to exercise both `TypeError` and
   `ValueError` branches.
 

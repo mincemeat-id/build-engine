@@ -3,13 +3,15 @@
 import json
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pytest import CaptureFixture, MonkeyPatch
 
 from build_engine import __version__
+from build_engine.cli import doctor as doctor_module
 from build_engine.cli.commands import main
-from build_engine.cli.doctor import DoctorCheck, DoctorReport
+from build_engine.cli.doctor import DoctorCheck, DoctorReport, _clock_skew_seconds
 from build_engine.config import EngineConfig
 
 
@@ -159,3 +161,32 @@ def test_serve_reports_missing_credentials(
     assert exit_code == 1
     captured = capsys.readouterr()
     assert "not registered" in captured.err
+
+
+def test_clock_skew_seconds_returns_none_when_header_missing() -> None:
+    now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC)
+    assert _clock_skew_seconds(None, now=now) is None
+
+
+def test_clock_skew_seconds_parses_valid_rfc_date_header() -> None:
+    # Backend says it's 12:00:30Z, we say it's 12:00:00Z → skew of -30s.
+    now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC)
+    skew = _clock_skew_seconds("Fri, 22 May 2026 12:00:30 GMT", now=now)
+    assert skew is not None
+    assert abs(skew - (-30.0)) < 0.001
+
+
+def test_clock_skew_seconds_swallows_value_error_on_malformed_header() -> None:
+    now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC)
+    assert _clock_skew_seconds("not a real date", now=now) is None
+
+
+def test_clock_skew_seconds_swallows_type_error_branch(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def raise_type_error(_value: str) -> datetime:
+        raise TypeError("forced for branch coverage")
+
+    monkeypatch.setattr(doctor_module, "parsedate_to_datetime", raise_type_error)
+    now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC)
+    assert _clock_skew_seconds("Fri, 22 May 2026 12:00:00 GMT", now=now) is None
