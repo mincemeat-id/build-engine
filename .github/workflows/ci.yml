@@ -5,12 +5,12 @@ on:
   push:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
-    # Pin to the sanctioned self-hosted pool: Ubuntu 24.04 LTS / amd64 with
-    # Docker-in-Docker, nftables, and the production PyInstaller baseline.
-    # See docs/build-engine-operations.md § CI Infrastructure.
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -111,7 +111,7 @@ jobs:
 
   mypy-strict:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mypy-strict')
-    runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

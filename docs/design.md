@@ -1,14 +1,14 @@
-# Build Engine Repository Design
+# Build Engine Design
 
-> **Repository:** `mincemeat-id/build-engine`
 > **Status:** Design and decision documentation.
 > **Audience:** Build-engine maintainers, backend integrators, platform
 > operators.
 
 The build engine is a standalone Python 3.14 single-binary agent. It connects
-outbound to coreapp, accepts build attempts over WSS, executes them in Docker
-containers using curated images, streams logs/status, uploads artifacts to
-platform staging storage, and reports metrics.
+outbound to a control plane (coreapp) over WSS, accepts build attempts,
+executes them in Docker containers using curated images, streams logs/status,
+uploads artifacts to platform staging storage, and reports metrics. The
+wire-level contract is documented in [`protocol.md`](protocol.md).
 
 ## Goals
 
@@ -129,7 +129,7 @@ Registration:
 
    ```bash
    build-engine register \
-     --backend-url https://agent.mincemeat.id \
+     --backend-url https://agent.example.com \
      --token <one-time-token> \
      --name build-engine-sfo-1 \
      --max-concurrency 2
@@ -475,8 +475,8 @@ Distribution:
 - Signed release artifact with SHA256.
 
 Host sizing, installation, upgrade, diagnostics, and CI runner requirements
-live in the [operations runbook](build-engine-operations.md). Release workflow
-design lives in the [release process](build-engine-release.md).
+live in the [operations runbook](operations.md). Release workflow design lives
+in the [release process](release.md).
 
 Systemd service:
 

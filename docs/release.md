@@ -14,8 +14,7 @@ Required release inputs:
 - `pyproject.toml` version set to `X.Y.Z`.
 - Matching `CHANGELOG.md` section `## [X.Y.Z] - YYYY-MM-DD`.
 - Current OpenAPI, protocol, and image-manifest contract snapshots.
-- Green CI on the sanctioned self-hosted runner pool:
-  `self-hosted`, `linux`, `x64`, `ubuntu-24.04`.
+- Green CI on the `ubuntu-24.04` GitHub-hosted runner.
 
 Optional release inputs:
 
@@ -71,7 +70,7 @@ permissions:
 
 ## Build Job
 
-The build job runs on the self-hosted Ubuntu 24.04 pool and uses
+The build job runs on the `ubuntu-24.04` GitHub-hosted runner and uses
 `astral-sh/setup-uv` so Python installation and dependency resolution match the
 developer path. The job:
 
@@ -91,7 +90,7 @@ developer path. The job:
 
 The build must not depend on host-global state beyond Docker, iptables support,
 and the runner baseline documented in
-[`build-engine-operations.md`](build-engine-operations.md#ci-infrastructure).
+[`operations.md`](operations.md#ci-infrastructure).
 
 ## Security Gates
 

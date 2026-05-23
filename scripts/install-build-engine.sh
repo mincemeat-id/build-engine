@@ -33,7 +33,7 @@ fi
 install_file "$BINARY_SRC" "$BINARY_DST" 0755
 install_file "$REPO_ROOT/packaging/systemd/build-engine.service" \
   "${ROOT}${SERVICE_DIR}/build-engine.service" 0644
-install_file "$REPO_ROOT/docs/build-engine-operations.md" \
+install_file "$REPO_ROOT/docs/operations.md" \
   "${ROOT}${DOC_DIR}/operations.md" 0644
 
 install -d -m 0755 "${ROOT}${SYSCONFDIR}" "${ROOT}${STATE_DIR}" "${ROOT}${LOG_DIR}"

@@ -30,11 +30,12 @@ Install or upgrade the Debian package:
 sudo apt-get install -y ./mincemeat-build-engine_0.1.0_amd64.deb
 ```
 
-Register the engine with a one-time token from coreapp:
+Register the engine with a one-time token issued by the control plane
+(coreapp):
 
 ```bash
 sudo build-engine register \
-  --backend-url https://agent.mincemeat.id \
+  --backend-url https://agent.example.com \
   --token <one-time-token> \
   --name build-engine-sfo-1 \
   --max-concurrency 2
@@ -172,53 +173,34 @@ bash scripts/smoke-ubuntu-24.04.sh
 
 ## CI Infrastructure
 
-The build-engine CI workflows run exclusively on the project's sanctioned
-self-hosted runner pool. Public hosted runners cannot satisfy the engine's
-test requirements:
+The build-engine CI workflows run on GitHub-hosted runners (`ubuntu-24.04`).
+The default runner image already provides everything the workflows need:
 
-- **Docker-in-Docker** for the executor integration tests (job lifecycle,
-  workspace, network guard).
-- **nftables / iptables (NET_ADMIN)** for the network-guard egress chain
-  fixtures in `tests/test_network_guard.py`.
-- **PyInstaller binary smoke** against the same baseline image as the
-  supported engine host spec.
-
-### Pool baseline
-
-| Property | Value |
-|----------|-------|
-| OS | Ubuntu 24.04 LTS |
-| Architecture | amd64 (`x64`) |
-| Container runtime | Docker 27.x with overlay2 + cgroup v2 |
-| Privileges | NET_ADMIN for nftables fixtures, rootless `actions` user otherwise |
-| Toolchain | `uv` cache directory pre-warmed; Python 3.14 installed on demand by `uv python install` |
-| Disk | ≥ 60 GiB free on `/var/lib/docker` |
-| Network | Outbound HTTPS only; metadata range `169.254.169.254/16` blocked at host firewall |
+- Docker engine for the executor smoke and the optional Ubuntu container
+  smoke (`make ubuntu-24-smoke`).
+- `iptables` / `nftables` tooling for the network-guard fixtures when they
+  are exercised on the host (privileged tests that require live `NET_ADMIN`
+  are gated to opt-in suites).
+- `uv` + Python 3.14 installed on demand via `astral-sh/setup-uv` and
+  `uv python install 3.14`.
+- PyInstaller binary smoke against the same Ubuntu 24.04 baseline used for
+  the supported engine host spec.
 
 ### Workflow pinning
 
-Every workflow in `.github/workflows/` MUST pin to the labelled selector
-below so unintended runners (including stray repository-level runners or
-the GitHub-hosted fallback) cannot match:
+Every workflow in `.github/workflows/` pins to the GitHub-hosted runner
+label so runs are reproducible across forks:
 
 ```yaml
-runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+runs-on: ubuntu-24.04
 ```
 
-The bare `runs-on: self-hosted` selector is forbidden because it would
-allow any runner registered against the org — including unprivileged
-arm64 or non-Ubuntu hosts — to pick up the job.
+The release workflow can optionally fan out to `ubuntu-24.04-arm` when the
+repository variable `ENABLE_ARM64=true` is set.
 
-### Hardening expectations
-
-Runners in the sanctioned pool are configured to:
-
-- run each job in an ephemeral workspace (`actions-runner --ephemeral`);
-- reset Docker state (`docker system prune -af --volumes`) between jobs;
-- enforce a 30-minute job timeout matching the workflow `timeout-minutes`;
-- block egress to RFC1918 and cloud metadata ranges except for the
-  coreapp staging endpoint and the configured registry mirrors;
-- rotate the runner registration token monthly.
+Forks that want to use a self-hosted runner pool can override `runs-on`
+through reusable workflows or a fork-local patch; nothing in the agent or
+test suite assumes a self-hosted environment.
 
 ### Installer smoke matrix
 

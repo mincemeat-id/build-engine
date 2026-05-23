@@ -18,7 +18,7 @@ def test_install_script_installs_service_docs_and_binary() -> None:
 
     assert "BUILD_ENGINE_BINARY" in script
     assert "packaging/systemd/build-engine.service" in script
-    assert "docs/build-engine-operations.md" in script
+    assert "docs/operations.md" in script
     assert "DESTDIR" in script
 
 

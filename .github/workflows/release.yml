@@ -25,7 +25,7 @@ concurrency:
 jobs:
   matrix:
     name: Resolve release matrix
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       targets: ${{ steps.set.outputs.targets }}
@@ -37,12 +37,12 @@ jobs:
           set -euo pipefail
           if [ "$ENABLE_ARM64" = "true" ]; then
             targets='[
-              {"arch":"linux-amd64","runs_on":["self-hosted","linux","x64","ubuntu-24.04"]},
-              {"arch":"linux-arm64","runs_on":["self-hosted","linux","arm64","ubuntu-24.04"]}
+              {"arch":"linux-amd64","runs_on":"ubuntu-24.04"},
+              {"arch":"linux-arm64","runs_on":"ubuntu-24.04-arm"}
             ]'
           else
             targets='[
-              {"arch":"linux-amd64","runs_on":["self-hosted","linux","x64","ubuntu-24.04"]}
+              {"arch":"linux-amd64","runs_on":"ubuntu-24.04"}
             ]'
           fi
           echo "targets=$(echo "$targets" | jq -c .)" >> "$GITHUB_OUTPUT"
@@ -268,7 +268,7 @@ jobs:
   publish:
     name: Publish GitHub release
     needs: build
-    runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
@@ -335,7 +335,7 @@ jobs:
     name: Tag build-engine-images alignment
     needs: publish
     if: github.event_name == 'push'
-    runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read

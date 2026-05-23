@@ -3,9 +3,10 @@
 ## Architecture
 
 This repository contains the standalone Mincemeat build-engine agent. It is a
-Python 3.14 single-binary service that connects outbound to coreapp, accepts
-build attempts over WSS, executes static-site builds in curated Docker builder
-images, streams logs/status, uploads staged artifacts, and reports metrics.
+Python 3.14 single-binary service that connects outbound to a control plane
+(coreapp), accepts build attempts over WSS, executes static-site builds in
+curated Docker builder images, streams logs/status, uploads staged artifacts,
+and reports metrics.
 
 **Repository layout:**
 
@@ -13,13 +14,14 @@ images, streams logs/status, uploads staged artifacts, and reports metrics.
 |-----------|---------|
 | `src/build_engine/` | Python package for the agent, CLI, auth, protocol, queue, executor, detection, cache, and metrics |
 | `contracts/` | Imported OpenAPI, WSS protocol, and builder image manifest contracts |
-| `docs/` | Canonical design docs and implementation checklist |
+| `docs/` | Design docs and implementation references |
 | `packaging/pyinstaller/` | PyInstaller onefile binary spec and smoke path |
 | `scripts/` | Local maintenance scripts, including contract sync and hook installation |
 | `tests/` | Unit and contract smoke tests |
 
-The adjacent coreapp checkout is expected at `../coreapp` when refreshing the
-OpenAPI subset with `make contracts-sync`.
+The adjacent control-plane checkout is expected at `../coreapp` when
+refreshing the OpenAPI subset with `make contracts-sync`. The build engine is
+licensed under AGPL-3.0-or-later — see [`LICENSE`](LICENSE).
 
 ---
 
@@ -35,7 +37,7 @@ Registration/auth commands:
 
 ```bash
 uv run build-engine register \
-  --backend-url https://agent.mincemeat.id \
+  --backend-url https://agent.example.com \
   --token <one-time-token> \
   --name build-engine-sfo-1 \
   --max-concurrency 2
@@ -66,13 +68,14 @@ make verify
 
 `make verify` runs, in order:
 
-1. `make contracts-sync` — refreshes the coreapp OpenAPI subset.
+1. `make contracts-sync` — refreshes the control-plane OpenAPI subset.
 2. `python -m compileall src tests` — fast syntax-regression canary.
 3. `ruff check .` — Python lint.
 4. `ruff format --check .` — Python formatting.
 5. `ty check` — Python type-check.
-6. `pytest` — unit and contract smoke tests.
-7. PyInstaller binary smoke — builds `dist/build-engine` and runs
+6. `bandit -r src/` — Python security lint.
+7. `pytest` — unit and contract smoke tests.
+8. PyInstaller binary smoke — builds `dist/build-engine` and runs
    `./dist/build-engine --version`.
 
 During iteration, narrower targets are fine:
@@ -116,8 +119,8 @@ and tags.
 - Prefer stdlib and small focused modules until later stages justify a runtime
   dependency.
 - Use structured parsers/APIs for TOML, JSON, and contracts.
-- Keep Stage work scoped to the implementation plan in
-  `docs/build-engine-design.md`.
+- Keep stage work scoped to the implementation plan in
+  [`docs/design.md`](docs/design.md).
 
 ### Python 3.14 Grammar
 
@@ -144,13 +147,13 @@ exceptions with `from` unless suppression is intentional.
 
 ## Contracts
 
-- `contracts/openapi/build-engine.openapi.json` is generated from
-  `../coreapp/frontend/openapi.json`.
+- `contracts/openapi/build-engine.openapi.json` is generated from the
+  control-plane checkout at `../coreapp/frontend/openapi.json`.
 - `contracts/protocol/wss-v1.json` locks WSS envelope/message names.
 - `contracts/image-manifest/manifest.schema.json` locks the builder image
   manifest schema.
 
-After coreapp contract changes, run:
+After control-plane contract changes, run:
 
 ```bash
 make contracts-sync
@@ -161,7 +164,9 @@ make verify
 
 ## Documentation Map
 
-- Start with `docs/README.md` for the design index.
-- Current implementation checklist lives in `docs/build-engine-design.md`.
-- Builder image repository design lives in `docs/build-engine-images-design.md`.
-- Coreapp integration design lives in `docs/coreapp-design.md`.
+- Start with [`docs/README.md`](docs/README.md) for the documentation index.
+- Agent design lives in [`docs/design.md`](docs/design.md).
+- Wire-level contract is in [`docs/protocol.md`](docs/protocol.md).
+- Builder image repository design lives in [`docs/images.md`](docs/images.md).
+- Operations runbook lives in [`docs/operations.md`](docs/operations.md).
+- Release process lives in [`docs/release.md`](docs/release.md).
