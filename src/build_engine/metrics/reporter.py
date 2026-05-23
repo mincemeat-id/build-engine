@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import time
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from urllib import error, request
 
 from build_engine.agent.auth import client_headers_for_credentials
@@ -20,6 +21,9 @@ class MetricsReportError(RuntimeError):
 
 
 type Sleep = Callable[[float], Awaitable[object]]
+
+LOG = logging.getLogger(__name__)
+METRICS_WARNING_INTERVAL_SECONDS = 60.0
 
 
 class MetricsReporter:
@@ -77,11 +81,17 @@ async def run_metrics_reporter(
     if backend_url is None:
         raise MetricsReportError("backend_url is missing")
     reporter = MetricsReporter(backend_url=backend_url, credentials=credentials)
+    last_warning_at = 0.0
     while True:
         snapshot = collector.snapshot(
             queue_depth=store.queue_depth(),
             cache_size_bytes=cache_size_bytes(config.state_dir),
         )
-        with suppress(MetricsReportError):
+        try:
             await asyncio.to_thread(reporter.report, snapshot)
+        except MetricsReportError as exc:
+            now = time.monotonic()
+            if now - last_warning_at >= METRICS_WARNING_INTERVAL_SECONDS:
+                LOG.warning("metrics report failed; will retry", exc_info=exc)
+                last_warning_at = now
         await sleep(config.heartbeat_interval_seconds)

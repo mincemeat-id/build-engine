@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import sqlite3
-from collections.abc import Mapping
+import threading
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -68,6 +70,9 @@ class SQLiteQueueStore:
 
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
+        self._lock = threading.RLock()
+        self._db: sqlite3.Connection | None = None
+        self.initialize()
 
     def initialize(self) -> None:
         """Create or migrate the SQLite schema."""
@@ -266,8 +271,10 @@ class SQLiteQueueStore:
             if row is None:
                 db.rollback()
                 raise QueueError("Cannot record crash for unknown attempt")
-            attempts = int(row["attempts"])
-            if attempts >= MAX_LOCAL_CRASHES:
+            # `attempts` is incremented when the active lease is acquired, so it already
+            # includes the crash currently being recorded.
+            local_crashes = int(row["attempts"])
+            if local_crashes >= MAX_LOCAL_CRASHES:
                 db.execute(
                     """
                     INSERT OR IGNORE INTO dlq (
@@ -280,7 +287,7 @@ class SQLiteQueueStore:
                         row["attempt_id"],
                         row["payload_json"],
                         error,
-                        attempts,
+                        local_crashes,
                         now,
                     ),
                 )
@@ -332,13 +339,17 @@ class SQLiteQueueStore:
             row = db.execute("SELECT COUNT(*) AS count FROM jobs WHERE state = 'QUEUED'").fetchone()
         return int(row["count"])
 
-    def _connect(self) -> sqlite3.Connection:
-        db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA synchronous=NORMAL")
-        db.execute("PRAGMA foreign_keys=ON")
-        return db
+    @contextlib.contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        with self._lock:
+            if self._db is None:
+                self._db = _open_connection(self.path)
+            try:
+                yield self._db
+            except Exception:
+                if self._db.in_transaction:
+                    self._db.rollback()
+                raise
 
 
 class SQLiteEventOutbox:
@@ -347,6 +358,7 @@ class SQLiteEventOutbox:
     def __init__(self, store: SQLiteQueueStore) -> None:
         self.store = store
         self._lock = asyncio.Lock()
+        self._db = _open_connection(store.path)
 
     async def append(self, envelope: Envelope) -> None:
         """Append one outbound attempt event to the SQLite outbox."""
@@ -354,45 +366,13 @@ class SQLiteEventOutbox:
         if envelope.attempt_id is None or envelope.seq is None:
             raise ProtocolError("Outbox events require attempt_id and seq")
         async with self._lock:
-            self.store.initialize()
-            with self.store._connect() as db:
-                db.execute(
-                    """
-                    INSERT OR IGNORE INTO events (
-                        id, attempt_id, seq, type, envelope_json, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        envelope.id,
-                        envelope.attempt_id,
-                        envelope.seq,
-                        envelope.type,
-                        envelope.to_json(),
-                        _utcnow(),
-                    ),
-                )
-                db.execute(
-                    """
-                    UPDATE jobs
-                    SET sequence_cursor = MAX(sequence_cursor, ?), updated_at = ?
-                    WHERE attempt_id = ?
-                    """,
-                    (envelope.seq, _utcnow(), envelope.attempt_id),
-                )
+            await asyncio.to_thread(self._append_sync, envelope)
 
     async def replay_after(self, cursors: Mapping[str, int]) -> list[Envelope]:
         """Return events whose per-attempt seq is greater than the backend cursor."""
 
         async with self._lock:
-            self.store.initialize()
-            with self.store._connect() as db:
-                rows = db.execute(
-                    """
-                    SELECT envelope_json FROM events
-                    ORDER BY created_at, attempt_id, seq
-                    """
-                ).fetchall()
+            rows = await asyncio.to_thread(self._replay_rows_sync)
         events: list[Envelope] = []
         for row in rows:
             envelope = decode_frame(row["envelope_json"], allowed_types=OUTBOUND_MESSAGE_TYPES)
@@ -406,13 +386,48 @@ class SQLiteEventOutbox:
         """Return the next outbound seq for an attempt."""
 
         async with self._lock:
-            self.store.initialize()
-            with self.store._connect() as db:
-                row = db.execute(
-                    "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM events WHERE attempt_id = ?",
-                    (attempt_id,),
-                ).fetchone()
+            row = await asyncio.to_thread(self._next_seq_row_sync, attempt_id)
         return int(row["next_seq"])
+
+    def _append_sync(self, envelope: Envelope) -> None:
+        self._db.execute(
+            """
+            INSERT OR IGNORE INTO events (
+                id, attempt_id, seq, type, envelope_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                envelope.id,
+                envelope.attempt_id,
+                envelope.seq,
+                envelope.type,
+                envelope.to_json(),
+                _utcnow(),
+            ),
+        )
+        self._db.execute(
+            """
+            UPDATE jobs
+            SET sequence_cursor = MAX(sequence_cursor, ?), updated_at = ?
+            WHERE attempt_id = ?
+            """,
+            (envelope.seq, _utcnow(), envelope.attempt_id),
+        )
+
+    def _replay_rows_sync(self) -> list[sqlite3.Row]:
+        return self._db.execute(
+            """
+            SELECT envelope_json FROM events
+            ORDER BY created_at, attempt_id, seq
+            """
+        ).fetchall()
+
+    def _next_seq_row_sync(self, attempt_id: str) -> sqlite3.Row:
+        return self._db.execute(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM events WHERE attempt_id = ?",
+            (attempt_id,),
+        ).fetchone()
 
 
 def _create_v1_schema(db: sqlite3.Connection) -> None:
@@ -523,3 +538,13 @@ def _utcnow() -> str:
 
 def _format_datetime(value: datetime) -> str:
     return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _open_connection(path: Path) -> sqlite3.Connection:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(path, timeout=30, isolation_level=None, check_same_thread=False)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=NORMAL")
+    db.execute("PRAGMA foreign_keys=ON")
+    return db

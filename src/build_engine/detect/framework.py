@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
+
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import Version
 
 from build_engine.detect.compatibility import (
     CompatibilityResult,
@@ -312,7 +316,9 @@ def detect_framework(
                 return FrameworkDetection(profile=profile, source="dependency")
         for profile_id in DETECTION_ORDER:
             profile = FRAMEWORK_PROFILES[profile_id]
-            if any(_script_contains(package_json, marker) for marker in profile.script_markers):
+            if any(
+                _script_contains_command(package_json, marker) for marker in profile.script_markers
+            ):
                 return FrameworkDetection(profile=profile, source="script")
         if package_json.script("build") is not None:
             return FrameworkDetection(profile=FRAMEWORK_PROFILES["generic"], source="build-script")
@@ -393,8 +399,12 @@ def _preferred_script(profile: FrameworkProfile, package_json: PackageJson) -> s
 def _script_matches_profile(profile: FrameworkProfile, script: str) -> bool:
     if profile.id == "generic":
         return True
-    markers = profile.dependency_markers + (profile.default_command.split()[0],)
-    return any(marker.replace("@11ty/", "") in script for marker in markers)
+    commands = {
+        *profile.script_markers,
+        profile.default_command,
+        *(marker.rsplit("/", maxsplit=1)[-1] for marker in profile.dependency_markers),
+    }
+    return any(_command_tokens_match(script, command) for command in commands if command)
 
 
 def _select_image(
@@ -415,8 +425,8 @@ def _has_config_marker(root: Path, markers: tuple[str, ...]) -> bool:
     return any((root / marker).exists() for marker in markers)
 
 
-def _script_contains(package_json: PackageJson, marker: str) -> bool:
-    return any(marker in script for script in package_json.scripts.values())
+def _script_contains_command(package_json: PackageJson, command: str) -> bool:
+    return any(_command_tokens_match(script, command) for script in package_json.scripts.values())
 
 
 def _node_major_satisfies(major: int, range_text: str) -> bool:
@@ -427,31 +437,66 @@ def _node_major_satisfies(major: int, range_text: str) -> bool:
 
 
 def _node_clause_satisfies(major: int, clause: str) -> bool:
-    tokens = re.findall(r"(?:>=|<=|>|<|=|\^|~)?\s*\d+(?:\.\d+)?(?:\.\d+)?|[xX*]", clause)
-    if not tokens:
+    try:
+        specifier = _node_clause_to_specifier_set(clause)
+    except InvalidSpecifier:
         return False
-    return all(_node_token_satisfies(major, token.strip()) for token in tokens)
+    return any(
+        specifier.contains(candidate, prereleases=True)
+        for candidate in (Version(f"{major}.0.0"), Version(f"{major}.999.999"))
+    )
 
 
-def _node_token_satisfies(major: int, token: str) -> bool:
+def _node_clause_to_specifier_set(clause: str) -> SpecifierSet:
+    normalized = clause.strip()
+    if normalized in {"*", "x", "X"}:
+        return SpecifierSet(">=0")
+    parts = [_node_token_to_specifier(token) for token in normalized.split()]
+    return SpecifierSet(",".join(part for part in parts if part))
+
+
+def _node_token_to_specifier(token: str) -> str:
     if token in {"*", "x", "X"}:
-        return True
-    match = re.match(r"(?P<op>>=|<=|>|<|=|\^|~)?\s*(?P<major>\d+)", token)
+        return ">=0"
+    match = re.fullmatch(
+        r"(?P<op>>=|<=|>|<|=|\^|~)?(?P<version>\d+(?:\.\d+)?(?:\.\d+)?)(?:\.[xX*])?",
+        token,
+    )
     if match is None:
+        raise InvalidSpecifier(token)
+    op = match.group("op") or "=="
+    version = _complete_node_version(match.group("version"))
+    if op == "=":
+        op = "=="
+    if op == "^":
+        major = int(version.split(".", maxsplit=1)[0])
+        return f">={version},<{major + 1}.0.0"
+    if op == "~":
+        major_text, minor_text, _patch_text = version.split(".")
+        return f">={version},<{major_text}.{int(minor_text) + 1}.0"
+    if op == "==" and token.endswith((".x", ".X", ".*")):
+        return f"=={match.group('version')}.*"
+    return f"{op}{version}"
+
+
+def _complete_node_version(version: str) -> str:
+    parts = version.split(".")
+    return ".".join([*parts, *(["0"] * (3 - len(parts)))])
+
+
+def _command_tokens_match(script: str, command: str) -> bool:
+    script_tokens = _shell_tokens(script)
+    command_tokens = _shell_tokens(command)
+    if not command_tokens or len(command_tokens) > len(script_tokens):
         return False
-    op = match.group("op") or "="
-    requested_major = int(match.group("major"))
-    match op:
-        case "=":
-            return major == requested_major
-        case ">=":
-            return major >= requested_major
-        case ">":
-            return major > requested_major
-        case "<=":
-            return major <= requested_major
-        case "<":
-            return major < requested_major
-        case "^" | "~":
-            return major == requested_major
-    return False
+    return any(
+        tuple(script_tokens[index : index + len(command_tokens)]) == tuple(command_tokens)
+        for index in range(len(script_tokens) - len(command_tokens) + 1)
+    )
+
+
+def _shell_tokens(value: str) -> list[str]:
+    try:
+        return shlex.split(value)
+    except ValueError:
+        return value.split()

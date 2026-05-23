@@ -9,13 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _fakes import EventSpool, InMemoryCommandHandlers
 
 from build_engine.agent.protocol import Envelope, new_envelope
 from build_engine.agent.uplink import (
     BackoffPolicy,
     BuildEngineUplink,
-    EventSpool,
-    InMemoryCommandHandlers,
     WebSocketLike,
     uplink_headers,
     websocket_url,
@@ -178,6 +177,18 @@ def test_event_spool_replays_from_backend_last_seq(
     asyncio.run(_event_spool_replays_from_backend_last_seq(monkeypatch, engine_material, tmp_path))
 
 
+def test_heartbeat_starts_before_long_replay(
+    engine_material: tuple[Any, EngineCredentials],
+) -> None:
+    asyncio.run(_heartbeat_starts_before_long_replay(engine_material))
+
+
+def test_welcome_heartbeat_interval_persists_between_reconnects(
+    engine_material: tuple[Any, EngineCredentials],
+) -> None:
+    asyncio.run(_welcome_heartbeat_interval_persists_between_reconnects(engine_material))
+
+
 async def _event_spool_replays_from_backend_last_seq(
     monkeypatch: pytest.MonkeyPatch,
     engine_material: tuple[Any, EngineCredentials],
@@ -233,6 +244,71 @@ async def _event_spool_replays_from_backend_last_seq(
     assert websocket.sent[-1]["payload"]["phase"] == "BUILDING"
 
 
+async def _heartbeat_starts_before_long_replay(
+    engine_material: tuple[Any, EngineCredentials],
+) -> None:
+    config, credentials = engine_material
+    config = load_config(
+        config_path=Path("/missing"),
+        overrides={
+            "backend_url": config.backend_url,
+            "state_dir": config.state_dir,
+            "heartbeat_interval_seconds": 0.01,
+        },
+    )
+    websocket = FakeWebSocket([_welcome_without_interval(credentials.engine_id).to_json(), None])
+    replay_started = asyncio.Event()
+    replay_finished = asyncio.Event()
+
+    class SlowReplaySpool(EventSpool):
+        async def replay_after(self, cursors: Mapping[str, int]) -> list[Envelope]:
+            del cursors
+            replay_started.set()
+            await asyncio.sleep(0.05)
+            replay_finished.set()
+            return []
+
+    async def connector(
+        url: str,
+        headers: Mapping[str, str],
+    ) -> WebSocketLike:
+        del url, headers
+        return websocket
+
+    uplink = BuildEngineUplink(
+        config,
+        credentials,
+        event_spool=SlowReplaySpool(config.state_dir / "events.jsonl"),
+        connector=connector,
+    )
+
+    await uplink.connect_once()
+
+    assert replay_started.is_set()
+    assert replay_finished.is_set()
+    assert "heartbeat" in [message["type"] for message in websocket.sent]
+
+
+async def _welcome_heartbeat_interval_persists_between_reconnects(
+    engine_material: tuple[Any, EngineCredentials],
+) -> None:
+    config, credentials = engine_material
+    uplink = BuildEngineUplink(
+        config,
+        credentials,
+        event_spool=EventSpool(config.state_dir / "events.jsonl"),
+    )
+
+    await uplink._receive_welcome(
+        FakeWebSocket([_welcome(credentials.engine_id, heartbeat_interval_seconds=30).to_json()])
+    )
+    await uplink._receive_welcome(
+        FakeWebSocket([_welcome_without_interval(credentials.engine_id).to_json()])
+    )
+
+    assert uplink._heartbeat_interval_seconds == 30
+
+
 def _welcome(
     engine_id: str,
     *,
@@ -247,5 +323,17 @@ def _welcome(
             "proto_negotiated": 1,
             "heartbeat_interval_seconds": heartbeat_interval_seconds,
             "last_seq": last_seq or {},
+        },
+    )
+
+
+def _welcome_without_interval(engine_id: str) -> Envelope:
+    return new_envelope(
+        "welcome",
+        {
+            "engine_id": engine_id,
+            "server_time": "2030-01-01T00:00:00Z",
+            "proto_negotiated": 1,
+            "last_seq": {},
         },
     )

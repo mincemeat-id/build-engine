@@ -216,53 +216,53 @@ Effort estimates are calendar hours for one senior engineer with full context.
 
 ### 3.1 Dead code & duplication
 
-- [ ] **S · 1h** Delete `EventSpool` (JSONL) from `agent/uplink.py` or move
+- [x] **S · 1h** Delete `EventSpool` (JSONL) from `agent/uplink.py` or move
   to `tests/_fakes.py`. **[H-8]**
-- [ ] **S · 1h** Move `InMemoryCommandHandlers` to `tests/_fakes.py`. **[M-9]**
-- [ ] **S · 30m** Collapse `__main__.py` → `main.py` → `cli/commands.main`
+- [x] **S · 1h** Move `InMemoryCommandHandlers` to `tests/_fakes.py`. **[M-9]**
+- [x] **S · 30m** Collapse `__main__.py` → `main.py` → `cli/commands.main`
   to a single entrypoint. **[M-5]**
-- [ ] **S · 1h** Remove the duplicate `_path_value` invocation in
+- [x] **S · 1h** Remove the duplicate `_path_value` invocation in
   `load_config`. **[M-1]**
-- [ ] **S · 2h** Replace `_config_defaults` hand-written dict with
+- [x] **S · 2h** Replace `_config_defaults` hand-written dict with
   introspection on `EngineDefaults` + `EngineConfig` field types. **[M-2]**
-- [ ] **S · 1h** Drop `EngineConfig.os` / `EngineConfig.arch` defaults
+- [x] **S · 1h** Drop `EngineConfig.os` / `EngineConfig.arch` defaults
   unless they will be overridden; otherwise read from `platform`.
 
 ### 3.2 Runtime correctness
 
-- [ ] **S · 30m** Drop `-l` flag from `sh -lc` in
+- [x] **S · 30m** Drop `-l` flag from `sh -lc` in
   `docker_runner.docker_run_args`. **[H-3]**
-- [ ] **M · 3h** Move `SQLiteQueueStore.initialize()` to construction; make
+- [x] **M · 3h** Move `SQLiteQueueStore.initialize()` to construction; make
   `SQLiteEventOutbox` cache a connection. **[H-6][M-18]**
-- [ ] **M · 3h** Wrap synchronous SQLite operations in `asyncio.to_thread`
+- [x] **M · 3h** Wrap synchronous SQLite operations in `asyncio.to_thread`
   inside `SQLiteEventOutbox`. **[H-7]**
-- [ ] **S · 2h** Persist `welcome.heartbeat_interval_seconds` between
+- [x] **S · 2h** Persist `welcome.heartbeat_interval_seconds` between
   reconnects in `BuildEngineUplink`. **[M-11]**
-- [ ] **S · 2h** Start the heartbeat task **before** replay so backends do
+- [x] **S · 2h** Start the heartbeat task **before** replay so backends do
   not time out the agent during long replays. **[M-10]**
-- [ ] **S · 2h** Reorder cache prune / prepare so MISS↔HIT events reflect
+- [x] **S · 2h** Reorder cache prune / prepare so MISS↔HIT events reflect
   reality. **[H-5]**
-- [ ] **S · 1h** Add logging around `run_metrics_reporter`'s suppressed
+- [x] **S · 1h** Add logging around `run_metrics_reporter`'s suppressed
   errors; rate-limit warnings to once per minute. **[H-12]**
-- [ ] **S · 2h** Fix DLQ off-by-one in `record_executor_crash`. **[M-19]**
-- [ ] **S · 2h** Implement `cli._drain` against `SQLiteCommandHandlers`
+- [x] **S · 2h** Fix DLQ off-by-one in `record_executor_crash`. **[M-19]**
+- [x] **S · 2h** Implement `cli._drain` against `SQLiteCommandHandlers`
   (flip `draining`, persist via a JSON marker file). **[M-4]**
 
 ### 3.3 Detection accuracy
 
-- [ ] **M · 4h** Replace `_node_clause_satisfies` with `packaging.specifiers`
+- [x] **M · 4h** Replace `_node_clause_satisfies` with `packaging.specifiers`
   (added as a dependency). **[M-6]**
-- [ ] **S · 2h** Tighten `_script_matches_profile` to require the framework
+- [x] **S · 2h** Tighten `_script_matches_profile` to require the framework
   command **as a token**, not a substring. **[M-7]**
-- [ ] **S · 1h** Add fixture sites for `astro`, `next-export`, and
+- [x] **S · 1h** Add fixture sites for `astro`, `next-export`, and
   `sveltekit-static` with **multiple** build-like scripts to cover the
   matcher edge cases.
 
 ### 3.4 Linter / type-checker tightening
 
-- [ ] **S · 1h** Add `per-file-ignores` for `tests/*` (`ANN`, `D101`-`D107`)
+- [x] **S · 1h** Add `per-file-ignores` for `tests/*` (`ANN`, `D101`-`D107`)
   and `__init__.py` (`F401`). **[L-5][L-6]**
-- [ ] **S · 1h** Source `__version__` from `importlib.metadata` so
+- [x] **S · 1h** Source `__version__` from `importlib.metadata` so
   `pyproject.toml` is the single source of truth. **[L-7]**
 
 ---

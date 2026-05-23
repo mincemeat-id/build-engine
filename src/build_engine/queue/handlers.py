@@ -1,12 +1,17 @@
 """Uplink command handlers backed by the durable SQLite queue."""
 
+import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from build_engine.agent.protocol import ProtocolError
 from build_engine.agent.uplink import CommandResult
 from build_engine.executor.cache import reset_cache
 from build_engine.queue.store import SQLiteQueueStore
+
+DRAIN_MARKER_FILENAME = "drain.json"
 
 
 @dataclass(slots=True)
@@ -16,6 +21,9 @@ class SQLiteCommandHandlers:
     store: SQLiteQueueStore
     draining: bool = False
     cache_reset_scopes: list[str | None] | None = None
+
+    def __post_init__(self) -> None:
+        self.draining = self.draining or _drain_marker_path(self.store).exists()
 
     async def assign(self, payload: dict[str, Any]) -> CommandResult:
         """Persist an idempotent assignment."""
@@ -41,6 +49,7 @@ class SQLiteCommandHandlers:
 
         del payload
         self.draining = True
+        _write_drain_marker(_drain_marker_path(self.store))
         return CommandResult(state="DRAINING")
 
     async def cache_reset(self, payload: dict[str, Any]) -> CommandResult:
@@ -61,3 +70,16 @@ def _required_payload_str(payload: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise ProtocolError(f"payload {key} is required")
     return value
+
+
+def _drain_marker_path(store: SQLiteQueueStore) -> Path:
+    return store.path.parent / DRAIN_MARKER_FILENAME
+
+
+def _write_drain_marker(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "draining": True,
+        "updated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    }
+    path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")

@@ -174,7 +174,7 @@ def docker_run_args(
         args.extend(["--env", f"{key}={value}"])
     if env_file_path is not None:
         args.extend(["--env-file", str(env_file_path)])
-    args.extend([spec.image, "sh", "-lc", spec.command])
+    args.extend([spec.image, "sh", "-c", spec.command])
     return args
 
 

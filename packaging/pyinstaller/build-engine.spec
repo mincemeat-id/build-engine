@@ -28,7 +28,7 @@ for package in ("tzdata",):
         datas += collect_data_files(package)
 
 a = Analysis(
-    [str(repo_root / "src" / "build_engine" / "main.py")],
+    [str(repo_root / "src" / "build_engine" / "__main__.py")],
     pathex=[str(repo_root / "src")],
     binaries=[],
     datas=datas,

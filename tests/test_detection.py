@@ -89,6 +89,23 @@ def test_framework_detection_uses_package_scripts_without_dependency_marker(tmp_
     assert plan.build_command == "npm run build"
 
 
+def test_framework_detection_requires_script_command_tokens(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        """
+        {
+          "scripts": {
+            "build": "echo astro buildable",
+            "build:storybook": "astro-storybook build"
+          }
+        }
+        """
+    )
+
+    plan = plan_build(tmp_path)
+
+    assert plan.framework_id == "generic"
+
+
 def test_npm_install_uses_ci_when_lockfile_exists() -> None:
     detection = detect_package_manager(FIXTURES / "vite-vanilla")
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from build_engine.agent.protocol import new_envelope
 from build_engine.queue.dlq import list_dead_letters, record_executor_crash
-from build_engine.queue.handlers import SQLiteCommandHandlers
+from build_engine.queue.handlers import DRAIN_MARKER_FILENAME, SQLiteCommandHandlers
 from build_engine.queue.leases import acquire_queue_lease
 from build_engine.queue.store import SQLiteEventOutbox, SQLiteQueueStore
 
@@ -185,6 +185,8 @@ async def _sqlite_command_handlers_enqueue_cancel_and_drain(tmp_path: Path) -> N
     assert cancelled_job is not None
     assert cancelled_job.state == "CANCELLED"
     assert drained.state == "DRAINING"
+    assert (tmp_path / DRAIN_MARKER_FILENAME).exists()
+    assert SQLiteCommandHandlers(SQLiteQueueStore(tmp_path / "queue.sqlite")).draining is True
     assert rejected.accepted is False
     assert rejected.state == "FAILED"
 

@@ -190,6 +190,7 @@ def prune_cache(
     *,
     site_max_bytes: int,
     ttl_days: int,
+    exclude_site_ids: tuple[str, ...] = (),
 ) -> list[Path]:
     """Prune expired and over-limit per-site caches using LRU order."""
 
@@ -197,13 +198,18 @@ def prune_cache(
     if not cache_root.exists():
         return []
     pruned: list[Path] = []
+    excluded = set(exclude_site_ids)
     expires_before = datetime.now(UTC) - timedelta(days=ttl_days)
     for site_root in _site_roots(cache_root):
+        if site_root.name in excluded:
+            continue
         if _last_access(site_root) < expires_before:
             _remove_site_root(site_root)
             pruned.append(site_root)
 
     for site_root in _site_roots(cache_root):
+        if site_root.name in excluded:
+            continue
         if directory_size_bytes(site_root) <= site_max_bytes:
             continue
         _prune_children_lru(site_root, max_bytes=site_max_bytes)

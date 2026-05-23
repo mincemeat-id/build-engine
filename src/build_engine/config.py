@@ -1,9 +1,10 @@
 """Configuration loading for the build engine."""
 
 import os
+import platform
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -62,8 +63,8 @@ class EngineConfig:
     image_manifest_version: str = DEFAULT_IMAGE_MANIFEST_VERSION
     images: tuple[str, ...] = DEFAULT_IMAGES
     network_blocklist: tuple[str, ...] = ()
-    os: str = "linux"
-    arch: str = "amd64"
+    os: str = field(default_factory=lambda: platform.system().lower())
+    arch: str = field(default_factory=lambda: _normalize_arch(platform.machine()))
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +99,7 @@ def load_config(
         values["credentials_path"] = selected_credentials_path
 
     active_credentials_path = _path_value(values["credentials_path"])
+    values["credentials_path"] = active_credentials_path
     if active_credentials_path.exists():
         credentials_values = _load_toml(active_credentials_path)
         for key in ("backend_url", "name"):
@@ -109,16 +111,7 @@ def load_config(
         if value is not None:
             values[key] = value
 
-    values["credentials_path"] = _path_value(values["credentials_path"])
-    values["state_dir"] = _path_value(values["state_dir"])
-    if isinstance(values.get("images"), list):
-        values["images"] = tuple(str(item) for item in values["images"])
-    elif isinstance(values.get("images"), str):
-        values["images"] = tuple(part.strip() for part in str(values["images"]).split(",") if part)
-    if isinstance(values.get("network_blocklist"), list):
-        values["network_blocklist"] = tuple(str(item) for item in values["network_blocklist"])
-    elif isinstance(values.get("network_blocklist"), str):
-        values["network_blocklist"] = _split_csv(str(values["network_blocklist"]))
+    values = _coerce_config_values(values)
 
     return EngineConfig(**values)
 
@@ -181,26 +174,28 @@ def config_capabilities(config: EngineConfig) -> dict[str, object]:
 
 
 def _config_defaults() -> dict[str, Any]:
-    return {
-        "backend_url": None,
-        "name": None,
-        "max_concurrency": DEFAULTS.max_concurrency,
-        "heartbeat_interval_seconds": DEFAULTS.heartbeat_interval_seconds,
-        "build_timeout_seconds": DEFAULTS.build_timeout_seconds,
-        "sigterm_grace_seconds": DEFAULTS.sigterm_grace_seconds,
-        "container_memory": DEFAULTS.container_memory,
-        "container_cpus": DEFAULTS.container_cpus,
-        "artifact_max_bytes": DEFAULTS.artifact_max_bytes,
-        "cache_site_max_bytes": DEFAULTS.cache_site_max_bytes,
-        "cache_ttl_days": DEFAULTS.cache_ttl_days,
-        "credentials_path": DEFAULT_CREDENTIALS_PATH,
-        "state_dir": DEFAULT_STATE_DIR,
-        "image_manifest_version": DEFAULT_IMAGE_MANIFEST_VERSION,
-        "images": DEFAULT_IMAGES,
-        "network_blocklist": (),
-        "os": "linux",
-        "arch": "amd64",
-    }
+    defaults: dict[str, Any] = {}
+    for config_field in fields(EngineConfig):
+        if config_field.default is not MISSING:
+            defaults[config_field.name] = config_field.default
+        elif config_field.default_factory is not MISSING:
+            defaults[config_field.name] = config_field.default_factory()
+    return defaults
+
+
+def _coerce_config_values(values: dict[str, Any]) -> dict[str, Any]:
+    coerced = dict(values)
+    coerced["credentials_path"] = _path_value(coerced["credentials_path"])
+    coerced["state_dir"] = _path_value(coerced["state_dir"])
+    if isinstance(coerced.get("images"), list):
+        coerced["images"] = tuple(str(item) for item in coerced["images"])
+    elif isinstance(coerced.get("images"), str):
+        coerced["images"] = _split_csv(str(coerced["images"]))
+    if isinstance(coerced.get("network_blocklist"), list):
+        coerced["network_blocklist"] = tuple(str(item) for item in coerced["network_blocklist"])
+    elif isinstance(coerced.get("network_blocklist"), str):
+        coerced["network_blocklist"] = _split_csv(str(coerced["network_blocklist"]))
+    return coerced
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -251,3 +246,12 @@ def _toml_string(value: str) -> str:
 
 def _split_csv(value: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
+def _normalize_arch(machine: str) -> str:
+    normalized = machine.lower()
+    if normalized in {"x86_64", "amd64"}:
+        return "amd64"
+    if normalized in {"aarch64", "arm64"}:
+        return "arm64"
+    return normalized

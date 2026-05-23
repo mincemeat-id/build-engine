@@ -163,6 +163,20 @@ def test_serve_reports_missing_credentials(
     assert "not registered" in captured.err
 
 
+def test_drain_command_persists_local_drain_marker(
+    capsys: CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(f'state_dir = "{tmp_path}"\n', encoding="utf-8")
+
+    exit_code = main(["drain", "--config", str(config_path)])
+
+    assert exit_code == 0
+    assert (tmp_path / "drain.json").exists()
+    assert "DRAINING" in capsys.readouterr().out
+
+
 def test_clock_skew_seconds_returns_none_when_header_missing() -> None:
     now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC)
     assert _clock_skew_seconds(None, now=now) is None

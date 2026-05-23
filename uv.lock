@@ -82,6 +82,7 @@ name = "mincemeat-build-engine"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "packaging" },
     { name = "websockets" },
 ]
 
@@ -95,7 +96,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "websockets", specifier = ">=15.0.0" }]
+requires-dist = [
+    { name = "packaging", specifier = ">=25.0" },
+    { name = "websockets", specifier = ">=15.0.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [

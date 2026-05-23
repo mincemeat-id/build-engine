@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import suppress
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import urlparse, urlunparse
 
@@ -17,7 +16,6 @@ from build_engine.agent.auth import client_headers_for_credentials
 from build_engine.agent.heartbeat import HeartbeatSnapshot, idle_heartbeat
 from build_engine.agent.protocol import (
     INBOUND_MESSAGE_TYPES,
-    OUTBOUND_MESSAGE_TYPES,
     PROTOCOL_VERSION,
     Envelope,
     ProtocolError,
@@ -107,97 +105,6 @@ class CommandHandlers(Protocol):
         """Reset local build cache scope."""
 
 
-@dataclass(slots=True)
-class InMemoryCommandHandlers:
-    """Stage 2 command handlers that are replaced by SQLite-backed Stage 3 code."""
-
-    attempts: dict[tuple[str, str], str] = field(default_factory=dict)
-    cancelled: set[str] = field(default_factory=set)
-    cache_reset_scopes: list[str | None] = field(default_factory=list)
-    draining: bool = False
-
-    async def assign(self, payload: dict[str, Any]) -> CommandResult:
-        build_job_id = _required_payload_str(payload, "build_job_id")
-        attempt_id = _required_payload_str(payload, "attempt_id")
-        key = (build_job_id, attempt_id)
-        state = self.attempts.setdefault(key, "ASSIGNED")
-        return CommandResult(state=state)
-
-    async def cancel(self, payload: dict[str, Any]) -> CommandResult:
-        build_job_id = _required_payload_str(payload, "build_job_id")
-        self.cancelled.add(build_job_id)
-        affected: list[str] = []
-        for key in tuple(self.attempts):
-            if key[0] == build_job_id:
-                self.attempts[key] = "CANCELLED"
-                affected.append(key[1])
-        return CommandResult(state="CANCELLED", affected_attempt_ids=tuple(affected))
-
-    async def drain(self, payload: dict[str, Any]) -> CommandResult:
-        del payload
-        self.draining = True
-        return CommandResult(state="DRAINING")
-
-    async def cache_reset(self, payload: dict[str, Any]) -> CommandResult:
-        site_id = payload.get("site_id")
-        if site_id is not None and not isinstance(site_id, str):
-            raise ProtocolError("cache.reset site_id must be a string or null")
-        self.cache_reset_scopes.append(site_id)
-        return CommandResult(state="WIPED")
-
-
-class EventSpool:
-    """Durable JSONL spool for outbound attempt-scoped events."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self._lock = asyncio.Lock()
-
-    async def append(self, envelope: Envelope) -> None:
-        """Append one outbound event to disk."""
-
-        if envelope.attempt_id is None or envelope.seq is None:
-            raise ProtocolError("Spool events require attempt_id and seq")
-        async with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(envelope.to_json())
-                handle.write("\n")
-
-    async def replay_after(self, cursors: Mapping[str, int]) -> list[Envelope]:
-        """Load events whose per-attempt seq is greater than the backend cursor."""
-
-        if not self.path.exists():
-            return []
-        events: list[Envelope] = []
-        async with self._lock:
-            with self.path.open(encoding="utf-8") as handle:
-                for line in handle:
-                    if not line.strip():
-                        continue
-                    envelope = decode_frame(line, allowed_types=OUTBOUND_MESSAGE_TYPES)
-                    if envelope.attempt_id is None or envelope.seq is None:
-                        continue
-                    if envelope.seq > cursors.get(envelope.attempt_id, 0):
-                        events.append(envelope)
-        return events
-
-    async def next_seq(self, attempt_id: str) -> int:
-        """Return the next strictly increasing outbound seq for an attempt."""
-
-        highest = 0
-        if self.path.exists():
-            async with self._lock:
-                with self.path.open(encoding="utf-8") as handle:
-                    for line in handle:
-                        if not line.strip():
-                            continue
-                        envelope = decode_frame(line, allowed_types=OUTBOUND_MESSAGE_TYPES)
-                        if envelope.attempt_id == attempt_id and envelope.seq is not None:
-                            highest = max(highest, envelope.seq)
-        return highest + 1
-
-
 class BuildEngineUplink:
     """Persistent WSS client that negotiates, heartbeats, handles commands, and replays."""
 
@@ -215,8 +122,8 @@ class BuildEngineUplink:
     ) -> None:
         self.config = config
         self.credentials = credentials
-        self.event_spool = event_spool or EventSpool(config.state_dir / "uplink-events.jsonl")
-        self.command_handlers = command_handlers or InMemoryCommandHandlers()
+        self.event_spool = event_spool or _default_event_spool(config)
+        self.command_handlers = command_handlers or _default_command_handlers(config)
         self.metrics = metrics
         self.heartbeat_provider = heartbeat_provider or (
             lambda: idle_heartbeat(workers_total=config.max_concurrency)
@@ -267,8 +174,8 @@ class BuildEngineUplink:
         try:
             welcome = await self._receive_welcome(websocket)
             await self._send_hello(websocket)
-            await self._replay_spool(websocket, welcome)
             heartbeat_task = asyncio.create_task(self._heartbeat_loop(websocket))
+            await self._replay_spool(websocket, welcome)
             async for frame in websocket:
                 await self._handle_frame(websocket, frame)
         finally:
@@ -425,6 +332,19 @@ def uplink_headers(config: EngineConfig, credentials: EngineCredentials) -> dict
         }
     )
     return headers
+
+
+def _default_event_spool(config: EngineConfig) -> EventSpoolLike:
+    from build_engine.queue.store import SQLiteEventOutbox, SQLiteQueueStore
+
+    return SQLiteEventOutbox(SQLiteQueueStore(config.state_dir / "queue.sqlite"))
+
+
+def _default_command_handlers(config: EngineConfig) -> CommandHandlers:
+    from build_engine.queue.handlers import SQLiteCommandHandlers
+    from build_engine.queue.store import SQLiteQueueStore
+
+    return SQLiteCommandHandlers(SQLiteQueueStore(config.state_dir / "queue.sqlite"))
 
 
 async def _websockets_connector(

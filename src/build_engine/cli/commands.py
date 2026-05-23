@@ -97,6 +97,8 @@ def _build_parser() -> argparse.ArgumentParser:
     cache_reset.set_defaults(handler=_cache_reset)
 
     drain = subparsers.add_parser("drain", help="request local drain mode")
+    drain.add_argument("--config", default="/etc/mincemeat/build-engine/config.toml")
+    drain.add_argument("--credentials", default=None)
     drain.set_defaults(handler=_drain)
 
     parser.set_defaults(handler=_help)
@@ -202,8 +204,10 @@ def _cache_reset(args: argparse.Namespace) -> int:
 
 
 def _drain(args: argparse.Namespace) -> int:
-    del args
-    print("drain scaffold ready")
+    config = load_config(config_path=args.config, credentials_path=args.credentials)
+    store = SQLiteQueueStore(config.state_dir / "queue.sqlite")
+    result = asyncio.run(SQLiteCommandHandlers(store).drain({}))
+    print(f"drain mode enabled; state={result.state}")
     return 0
 
 

@@ -111,6 +111,8 @@ def test_docker_run_args_include_resource_and_hardening_flags(tmp_path: Path) ->
     assert "--security-opt" in args
     assert "no-new-privileges" in args
     assert "--network" in args
+    assert args[-4:] == ["node:22", "sh", "-c", "npm ci && npm run build"]
+    assert "-lc" not in args
     assert "/var/run/docker.sock" not in " ".join(args)
 
 

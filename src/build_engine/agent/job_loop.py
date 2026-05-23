@@ -231,18 +231,20 @@ async def execute_job(
         cancel_event = asyncio.Event()
         cancel_monitor = asyncio.create_task(_monitor_cancel(store, job, cancel_event))
         command = _combined_command(plan.install_command, plan.build_command)
+        site_id = _required_str(payload, "site_id")
+        cache = prepare_site_cache(
+            state_dir=config.state_dir,
+            site_id=site_id,
+            package_manager=plan.package_manager,
+            project_root=project_root,
+            enabled=_cache_enabled(payload),
+        )
         await asyncio.to_thread(
             prune_cache,
             config.state_dir,
             site_max_bytes=config.cache_site_max_bytes,
             ttl_days=config.cache_ttl_days,
-        )
-        cache = prepare_site_cache(
-            state_dir=config.state_dir,
-            site_id=_required_str(payload, "site_id"),
-            package_manager=plan.package_manager,
-            project_root=project_root,
-            enabled=_cache_enabled(payload),
+            exclude_site_ids=(site_id,),
         )
         if metrics is not None:
             metrics.cache_event(cache.event)
