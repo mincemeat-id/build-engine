@@ -7,8 +7,18 @@ on:
 
 jobs:
   verify:
-    runs-on: self-hosted
-    timeout-minutes: 20
+    # Pin to the sanctioned self-hosted pool: Ubuntu 24.04 LTS / amd64 with
+    # Docker-in-Docker, nftables, and the production PyInstaller baseline.
+    # See docs/build-engine-operations.md § CI Infrastructure.
+    runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # `verify` runs the full make verify gate. `install` re-uses the
+        # produced binary and exercises scripts/install-build-engine.sh
+        # against a throwaway DESTDIR so the installer never bit-rots.
+        target: [verify, install]
     steps:
       - uses: actions/checkout@v4
 
@@ -25,21 +35,38 @@ jobs:
         run: uv sync --locked --all-extras --dev
 
       - name: Compile
+        if: matrix.target == 'verify'
         run: uv run python -m compileall src tests
 
       - name: Lint
+        if: matrix.target == 'verify'
         run: uv run ruff check .
 
       - name: Format
+        if: matrix.target == 'verify'
         run: uv run ruff format --check .
 
       - name: Type check
+        if: matrix.target == 'verify'
         run: uv run ty check
 
       - name: Tests
+        if: matrix.target == 'verify'
         run: uv run pytest
 
       - name: Binary build smoke
         run: |
           uv run pyinstaller packaging/pyinstaller/build-engine.spec --noconfirm
           ./dist/build-engine --version
+
+      - name: Installer smoke (DESTDIR)
+        if: matrix.target == 'install'
+        run: |
+          DESTDIR="$(mktemp -d)"
+          echo "Installing into DESTDIR=$DESTDIR"
+          DESTDIR="$DESTDIR" bash scripts/install-build-engine.sh
+          test -x "$DESTDIR/usr/local/bin/build-engine"
+          test -f "$DESTDIR/etc/mincemeat/build-engine/config.toml"
+          test -f "$DESTDIR/etc/systemd/system/build-engine.service"
+          "$DESTDIR/usr/local/bin/build-engine" --version
+          rm -rf "$DESTDIR"

@@ -113,3 +113,62 @@ For a local packaging smoke on Ubuntu 24.04:
 ```bash
 bash scripts/smoke-ubuntu-24.04.sh
 ```
+
+## CI Infrastructure
+
+The build-engine CI workflows run exclusively on the project's sanctioned
+self-hosted runner pool. Public hosted runners cannot satisfy the engine's
+test requirements:
+
+- **Docker-in-Docker** for the executor integration tests (job lifecycle,
+  workspace, network guard).
+- **nftables / iptables (NET_ADMIN)** for the network-guard egress chain
+  fixtures in `tests/test_network_guard.py`.
+- **PyInstaller binary smoke** against the same baseline image as the
+  supported engine host spec.
+
+### Pool baseline
+
+| Property | Value |
+|----------|-------|
+| OS | Ubuntu 24.04 LTS |
+| Architecture | amd64 (`x64`) |
+| Container runtime | Docker 27.x with overlay2 + cgroup v2 |
+| Privileges | NET_ADMIN for nftables fixtures, rootless `actions` user otherwise |
+| Toolchain | `uv` cache directory pre-warmed; Python 3.14 installed on demand by `uv python install` |
+| Disk | ≥ 60 GiB free on `/var/lib/docker` |
+| Network | Outbound HTTPS only; metadata range `169.254.169.254/16` blocked at host firewall |
+
+### Workflow pinning
+
+Every workflow in `.github/workflows/` MUST pin to the labelled selector
+below so unintended runners (including stray repository-level runners or
+the GitHub-hosted fallback) cannot match:
+
+```yaml
+runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+```
+
+The bare `runs-on: self-hosted` selector is forbidden because it would
+allow any runner registered against the org — including unprivileged
+arm64 or non-Ubuntu hosts — to pick up the job.
+
+### Hardening expectations
+
+Runners in the sanctioned pool are configured to:
+
+- run each job in an ephemeral workspace (`actions-runner --ephemeral`);
+- reset Docker state (`docker system prune -af --volumes`) between jobs;
+- enforce a 30-minute job timeout matching the workflow `timeout-minutes`;
+- block egress to RFC1918 and cloud metadata ranges except for the
+  coreapp staging endpoint and the configured registry mirrors;
+- rotate the runner registration token monthly.
+
+### Installer smoke matrix
+
+The `install` matrix entry in `.github/workflows/ci.yml` re-uses the
+PyInstaller binary produced by the `verify` step and runs
+`scripts/install-build-engine.sh` with `DESTDIR=$(mktemp -d)`. This
+verifies that the on-disk layout the production deploy depends on
+(binary, systemd unit, default config, sysconfdir layout) still installs
+cleanly on the runner image without root privileges.

@@ -161,13 +161,13 @@ Effort estimates are calendar hours for one senior engineer with full context.
 > matching the supported engine host spec. The remaining work is to make
 > the pinning explicit and the pool documented — not to move off it.
 
-- [ ] **S · 1h** Replace bare `runs-on: self-hosted` with a labelled
+- [x] **S · 1h** Replace bare `runs-on: self-hosted` with a labelled
   selector such as `runs-on: [self-hosted, linux, x64, ubuntu-24.04]` in
   `.github/workflows/ci.yml` so only the sanctioned pool can match.
-- [ ] **S · 1h** Add a matrix entry that also installs the resulting binary
+- [x] **S · 1h** Add a matrix entry that also installs the resulting binary
   via `scripts/install-build-engine.sh` with `DESTDIR=$(mktemp -d)` to
   exercise the installer.
-- [ ] **S · 1h** Document the self-hosted runner pool (hosts, labels,
+- [x] **S · 1h** Document the self-hosted runner pool (hosts, labels,
   hardening expectations, image baseline) in
   `docs/build-engine-operations.md` § CI Infrastructure.
 
