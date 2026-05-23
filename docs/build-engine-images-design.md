@@ -10,6 +10,12 @@ standalone build engine. Images are public GHCR artifacts with pinned digests,
 SBOMs, provenance, vulnerability gates, and a versioned manifest consumed by
 the engine.
 
+The source of truth is the sibling
+[`mincemeat-id/build-engine-images`](https://github.com/mincemeat-id/build-engine-images)
+repository. This document records the contract the engine consumes; reviewers
+should verify image Dockerfiles, fixture smoke tests, manifest releases, SBOMs,
+and provenance in that repository.
+
 ## Goals
 
 - Provide auditable, reproducible builder images for v1 GA frameworks.

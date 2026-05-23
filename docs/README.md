@@ -1,7 +1,9 @@
 # Build Engine Design Documentation
 
+![Status: V1 GA implementation](https://img.shields.io/badge/status-V1%20GA%20implementation-blue)
+
 > **Status:** Design and decision documentation.
-> **Last Updated:** 2026-05-21.
+> **Last Updated:** 2026-05-23.
 
 This directory contains the build-engine design documentation. The build engine
 is a standalone Python 3.14 single-binary agent that connects outbound to
@@ -19,9 +21,15 @@ The design is split by repository so each component has its own source of truth:
 - [Build-engine images design](build-engine-images-design.md) - builder image
   repository design, image manifest contract, framework image matrix, publication,
   scanning, and rollback.
+- [Build-engine release process](build-engine-release.md) - release pipeline,
+  artifact signing, attestations, publication, and consumer verification.
 - [Coreapp integration design](coreapp-design.md) - coreapp integration
   including shared models, backend, worker, frontend, migrations, pipeline
   integration, and operator UI.
+- [Operations runbook](build-engine-operations.md) - host sizing, install,
+  upgrade, diagnostics, release artifacts, and CI runner pool requirements.
+- [Contributor guide](../CONTRIBUTING.md) - verification gates, hooks,
+  contract refreshes, release process, and agent-specific notes.
 
 ## Key Design Decisions
 

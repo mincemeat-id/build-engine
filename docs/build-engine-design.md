@@ -69,8 +69,7 @@ build-engine/
 │       └── commands.py
 ├── packaging/
 │   ├── pyinstaller/
-│   ├── systemd/build-engine.service
-│   └── deb/
+│   └── systemd/build-engine.service
 ├── tests/
 └── scripts/
 ```
@@ -395,6 +394,12 @@ Rules:
 - Values MUST be non-empty strings; non-string and empty values are ignored.
 - Values MUST NOT contain newline characters (`\n`, `\r`).
 - Secrets are scoped to a single attempt and never reused across attempts.
+- Accepted pairs become container environment variables with exactly the same
+  names and string values. For example, payload key `NPM_TOKEN` is visible to
+  user build code as `NPM_TOKEN`.
+- Coreapp owns filtering which site/build settings are allowed to become build
+  secrets. The engine treats the received map as already scoped to the attempt
+  and enforces only env-name/value safety.
 
 ### Handling
 
@@ -460,7 +465,7 @@ Commands:
 - clock skew within 60s
 - network guard setup
 
-## Packaging And Host Spec
+## Packaging
 
 Distribution:
 
@@ -469,16 +474,9 @@ Distribution:
 - Build on Ubuntu 24.04 for oldest supported glibc.
 - Signed release artifact with SHA256.
 
-Recommended host for `max_concurrency=2`:
-
-| Resource | Recommended |
-|----------|-------------|
-| vCPU | 6 |
-| RAM | 8 GiB |
-| Root disk | 40 GiB |
-| `/var/lib/build-engine` | 100 GiB |
-| Network | 1 Gbps |
-| Docker | 27.x or newer |
+Host sizing, installation, upgrade, diagnostics, and CI runner requirements
+live in the [operations runbook](build-engine-operations.md). Release workflow
+design lives in the [release process](build-engine-release.md).
 
 Systemd service:
 

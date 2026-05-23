@@ -1,13 +1,11 @@
 # Mincemeat Build Engine
 
+![Status: V1 GA implementation](https://img.shields.io/badge/status-V1%20GA%20implementation-blue)
+
 Standalone Python 3.14 agent for running Mincemeat static-site builds outside
 coreapp. The engine connects outbound to coreapp over WSS, receives build
 attempts, executes them in curated Docker builder images, streams status/logs,
 and uploads staged artifacts back to the platform.
-
-This repository has completed Stage 3: config, registration/auth, the agent
-WSS uplink protocol, and the durable SQLite queue. The executor, cache,
-metrics, and packaging operations still land in later stages.
 
 ## Quick Start
 
@@ -30,14 +28,14 @@ The project targets Python 3.14 or newer and uses:
 Install hooks once per checkout:
 
 ```bash
-uv run pre-commit install
+make hooks-install
 ```
 
 ## Repository Layout
 
 ```text
 build-engine/
-├── contracts/              # Imported Stage 0 contracts
+├── contracts/              # Imported contract snapshots
 │   ├── image-manifest/     # Builder image manifest JSON Schema
 │   ├── openapi/            # Coreapp build-engine OpenAPI subset
 │   └── protocol/           # WSS protocol envelope schema
@@ -50,7 +48,7 @@ build-engine/
 
 ## Contracts
 
-Stage 0 imports the locked contract surfaces from the adjacent coreapp and
+The repository carries locked contract surfaces from the adjacent coreapp and
 design-doc sources:
 
 - `contracts/openapi/build-engine.openapi.json` is extracted from
@@ -81,8 +79,8 @@ build-engine drain
 ```
 
 Registration, credential validation, session refresh, WSS uplink, and durable
-queueing are implemented. Executor, cache, metrics, and full diagnostics land
-in later stages.
+queueing are implemented alongside the Docker executor, cache metrics,
+packaging operations, and diagnostics described in the design docs.
 
 ## Compatibility Matrix
 

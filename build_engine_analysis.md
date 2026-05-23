@@ -317,25 +317,25 @@ Effort estimates are calendar hours for one senior engineer with full context.
 > reality.
 > **Estimated total:** ~1.5 days.
 
-- [ ] **S · 2h** Drop "Stage N completed" language from `README.md` and
+- [x] **S · 2h** Drop "Stage N completed" language from `README.md` and
   `docs/README.md`; replace with a status badge. **[L-1]**
-- [ ] **S · 1h** Add `CHANGELOG.md` (keep-a-changelog format) and an
+- [x] **S · 1h** Add `CHANGELOG.md` (keep-a-changelog format) and an
   enforcement test that fails if `pyproject.toml` version bumps without a
   new entry. **[L-2]**
-- [ ] **S · 2h** Add `CONTRIBUTING.md` covering: `make verify` gate, hook
+- [x] **S · 2h** Add `CONTRIBUTING.md` covering: `make verify` gate, hook
   install, AGENTS.md highlights, release process, and how to refresh
   contracts. **[L-3]**
-- [ ] **S · 1h** Delete the duplicate "Host Spec" section from
+- [x] **S · 1h** Delete the duplicate "Host Spec" section from
   `docs/build-engine-design.md` and link to
   `docs/build-engine-operations.md`. **[L-4]**
-- [ ] **S · 1h** Remove the `packaging/deb/` reference from
+- [x] **S · 1h** Remove the `packaging/deb/` reference from
   `docs/build-engine-design.md` (or add the directory & build target).
   **[M-25]**
-- [ ] **S · 1h** Document the build-secret env contract in
+- [x] **S · 1h** Document the build-secret env contract in
   `docs/build-engine-design.md` (alongside the Stage 1.1 code fix).
-- [ ] **S · 2h** Add `docs/build-engine-release.md` describing the new
+- [x] **S · 2h** Add `docs/build-engine-release.md` describing the new
   GitHub Actions release pipeline (Stage 7).
-- [ ] **S · 1h** Cross-link `docs/build-engine-images-design.md` with the
+- [x] **S · 1h** Cross-link `docs/build-engine-images-design.md` with the
   build-engine-images repo so reviewers know the source of truth.
 
 ---
