@@ -20,7 +20,9 @@ Required release inputs:
 Optional release inputs:
 
 - `GPG_SIGNING_KEY` for detached `.asc` signatures.
-- Manual approval for linux arm64 when that matrix entry is enabled.
+- `ENABLE_ARM64=true` when the linux arm64 matrix entry is ready to publish.
+- `BUILD_ENGINE_IMAGES_MANIFEST_URL` when the release should align against a
+  manifest other than the default build-engine-images `master` manifest.
 
 ## Trigger
 
@@ -32,6 +34,10 @@ on:
     tags:
       - "v*.*.*"
 ```
+
+The workflow also supports manual dispatch with an explicit tag. Manual runs
+publish a draft GitHub Release so maintainers can inspect assets before making
+them public.
 
 The workflow uses a tag-scoped concurrency group so re-runs for the same tag do
 not publish conflicting artifacts:
@@ -49,7 +55,8 @@ permissions:
   contents: write
   id-token: write
   attestations: write
-  packages: read
+  packages: write
+  security-events: write
 ```
 
 ## Build Job
@@ -65,7 +72,11 @@ developer path. The job:
 5. Installs the binary into a temporary `DESTDIR` and runs
    `build-engine --version` and `build-engine doctor --json`.
 6. Renames the binary to `build-engine-X.Y.Z-linux-amd64`.
-7. Generates `SHA256SUMS`.
+7. Generates a CycloneDX source SBOM.
+8. Signs the binary with cosign keyless signing.
+9. Generates SLSA provenance and SBOM attestations.
+10. Generates `SHA256SUMS` for the binary, SBOM, signatures, certificates, and
+    attestation bundles.
 
 The build must not depend on host-global state beyond Docker, iptables support,
 and the runner baseline documented in
@@ -105,8 +116,10 @@ The GitHub release uploads:
 - `build-engine-X.Y.Z-linux-amd64`
 - `SHA256SUMS`
 - `build-engine-X.Y.Z-linux-amd64.sig`
+- `build-engine-X.Y.Z-linux-amd64.pem`
 - `build-engine-X.Y.Z-linux-amd64.asc` when GPG signing is enabled
-- `build-engine-X.Y.Z-linux-amd64.intoto.jsonl`
+- `build-engine-X.Y.Z-linux-amd64.provenance.intoto.jsonl`
+- `build-engine-X.Y.Z-linux-amd64.sbom.intoto.jsonl`
 - `build-engine-X.Y.Z-linux-amd64.cdx.json`
 
 Release notes are populated from the matching `CHANGELOG.md` section and then
@@ -124,5 +137,22 @@ and attestations, then checking:
 5. `build-engine --version`
 6. `build-engine doctor --json`
 
-The planned `scripts/verify-release.sh` helper makes this path repeatable for
-operators and support staff.
+`scripts/verify-release.sh <tag>` makes this path repeatable for operators and
+support staff.
+
+## Reproducibility
+
+The release workflow always starts by removing `build/`, `dist/`, and
+release reports from the checkout before running `make verify`, then uploads
+only files under `dist/build-engine-<version>-<arch>*` plus `SHA256SUMS`.
+That prevents host leftovers from entering the release bundle.
+
+The release job fixes `SOURCE_DATE_EPOCH=0`, `PYTHONHASHSEED=0`, `TZ=UTC`, and
+`LC_ALL=C.UTF-8`, then performs two clean PyInstaller builds and compares the
+`dist/build-engine` SHA256 before any artifact is signed. A mismatch fails the
+release before publication.
+
+This check was verified locally on 2026-05-23 against PyInstaller 6.20.0 and
+Python 3.14.0. Without the fixed environment, the one-file executable differed
+between clean builds; with the fixed environment, both builds produced
+`1ec6f9c8ffb3cab429adaa61acc1af8d3c080a5201dae40d7bab33625322bf6b`.

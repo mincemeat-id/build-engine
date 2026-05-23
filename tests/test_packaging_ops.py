@@ -28,7 +28,27 @@ def test_release_script_writes_checksum_and_supports_signing() -> None:
     assert "SHA256SUMS" in script
     assert "sha256sum" in script
     assert "COSIGN_SIGN" in script
+    assert "output-certificate" in script
+    assert "CHECKSUM_ONLY" in script
     assert "GPG_SIGN" in script
+
+
+def test_verify_release_script_checks_sigstore_slsa_and_sbom() -> None:
+    script = (REPO_ROOT / "scripts/verify-release.sh").read_text(encoding="utf-8")
+
+    assert "cosign verify-blob" in script
+    assert "slsa-verifier verify-artifact" in script
+    assert "CycloneDX" in script
+
+
+def test_release_workflow_publishes_signed_attested_artifacts() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert "v*.*.*" in workflow
+    assert "attest-build-provenance@" in workflow
+    assert "attest-sbom@" in workflow
+    assert "softprops/action-gh-release@" in workflow
+    assert "build-engine-${version}-${RELEASE_ARCH}" in workflow
 
 
 def test_pyinstaller_spec_has_onefile_hidden_imports_and_debuggable_settings() -> None:

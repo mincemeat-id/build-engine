@@ -380,16 +380,16 @@ Effort estimates are calendar hours for one senior engineer with full context.
 
 ### 7.1 Workflow scaffolding
 
-- [ ] **S · 2h** Create `.github/workflows/release.yml` triggered on
+- [x] **S · 2h** Create `.github/workflows/release.yml` triggered on
   `push: tags: ['v*.*.*']` and `workflow_dispatch`.
-- [ ] **S · 1h** Add `permissions: contents: write, id-token: write,
+- [x] **S · 1h** Add `permissions: contents: write, id-token: write,
   attestations: write, packages: read` (write only when publishing).
-- [ ] **S · 1h** Add `concurrency` group keyed on the tag to prevent
+- [x] **S · 1h** Add `concurrency` group keyed on the tag to prevent
   duplicate runs.
 
 ### 7.2 Build matrix
 
-- [ ] **M · 4h** Build job on the sanctioned self-hosted pool
+- [x] **M · 4h** Build job on the sanctioned self-hosted pool
   (`runs-on: [self-hosted, linux, x64, ubuntu-24.04]`, which matches the
   supported engine host spec) that:
   - runs `make verify` (lint, type-check, tests, contracts-sync);
@@ -397,68 +397,68 @@ Effort estimates are calendar hours for one senior engineer with full context.
   - renames to `build-engine-<version>-linux-amd64`;
   - emits `dist/SHA256SUMS`;
   - uploads as a workflow artifact.
-- [ ] **S · 2h** Pin every `actions/*` and third-party action by **commit
+- [x] **S · 2h** Pin every `actions/*` and third-party action by **commit
   SHA** with a version comment, matching the
   build-engine-images convention.
-- [ ] **S · 2h** Add a separate `linux-arm64` matrix entry behind a
+- [x] **S · 2h** Add a separate `linux-arm64` matrix entry behind a
   `if: vars.ENABLE_ARM64 == 'true'` gate (out of v1 scope but plumbing
   ready).
 
 ### 7.3 SBOM & vulnerability scan
 
-- [ ] **M · 4h** Generate CycloneDX SBOM with `anchore/sbom-action` against
+- [x] **M · 4h** Generate CycloneDX SBOM with `anchore/sbom-action` against
   the source tree.
-- [ ] **M · 3h** Run `trivy fs --severity HIGH,CRITICAL --exit-code 1
+- [x] **M · 3h** Run `trivy fs --severity HIGH,CRITICAL --exit-code 1
   --skip-dirs .venv .` and upload SARIF.
-- [ ] **S · 2h** Run `bandit -r src/` and `pip-audit` against `uv.lock`.
+- [x] **S · 2h** Run `bandit -r src/` and `pip-audit` against `uv.lock`.
 
 ### 7.4 Sign & attest
 
-- [ ] **M · 4h** `cosign sign-blob --yes --output-signature
+- [x] **M · 4h** `cosign sign-blob --yes --output-signature
   build-engine-<version>-linux-amd64.sig` using OIDC keyless against
   Sigstore.
-- [ ] **M · 4h** `actions/attest-build-provenance@v3` over the binary and
+- [x] **M · 4h** `actions/attest-build-provenance@v3` over the binary and
   SBOM (SLSA v1 provenance).
-- [ ] **S · 2h** `actions/attest-sbom@v3` for the CycloneDX SBOM.
-- [ ] **S · 2h** Optional GPG detached sign when
+- [x] **S · 2h** `actions/attest-sbom@v3` for the CycloneDX SBOM.
+- [x] **S · 2h** Optional GPG detached sign when
   `secrets.GPG_SIGNING_KEY` is set, gated by `if: env.GPG_SIGNING_KEY`.
 
 ### 7.5 Publish
 
-- [ ] **M · 3h** `softprops/action-gh-release@v2` step that uploads:
+- [x] **M · 3h** `softprops/action-gh-release@v2` step that uploads:
   - the binary
   - `SHA256SUMS`
   - `*.sig` and `*.pem` from cosign
   - the CycloneDX SBOM
   - `*.intoto.jsonl` attestations.
-- [ ] **S · 2h** On `push: tags`, also tag `build-engine-<version>` on the
+- [x] **S · 2h** On `push: tags`, also tag `build-engine-<version>` on the
   build-engine-images registry namespace so engine ↔ image version
   alignment is visible.
-- [ ] **S · 1h** Add a draft step that auto-populates release notes from
+- [x] **S · 1h** Add a draft step that auto-populates release notes from
   `CHANGELOG.md` between tags.
 
 ### 7.6 Build hygiene
 
-- [ ] **S · 2h** `actions/setup-python` is replaced by `astral-sh/setup-uv`
+- [x] **S · 2h** `actions/setup-python` is replaced by `astral-sh/setup-uv`
   with `enable-cache: true` and `cache-dependency-glob: uv.lock`.
-- [ ] **S · 1h** Verify the workflow runs on a clean checkout — no host
+- [x] **S · 1h** Verify the workflow runs on a clean checkout — no host
   state leaks into `dist/`.
-- [ ] **S · 2h** `dependency-review-action` on PRs to flag new direct
+- [x] **S · 2h** `dependency-review-action` on PRs to flag new direct
   dependencies.
-- [ ] **S · 1h** `actionlint` workflow mirroring `build-engine-images`'s
+- [x] **S · 1h** `actionlint` workflow mirroring `build-engine-images`'s
   pattern.
-- [ ] **S · 2h** Verify binary is **reproducible**: rerun build job and
+- [x] **S · 2h** Verify binary is **reproducible**: rerun build job and
   compare SHA256. Document any sources of nondeterminism (PyInstaller
   timestamps, `__pycache__` ordering) in `docs/build-engine-release.md`.
 
 ### 7.7 Verifier UX
 
-- [ ] **S · 2h** Add `scripts/verify-release.sh` for downstream consumers:
+- [x] **S · 2h** Add `scripts/verify-release.sh` for downstream consumers:
   - downloads binary + signature + SBOM;
   - runs `cosign verify-blob` with the public Fulcio bundle;
   - runs `slsa-verifier verify-artifact` against the provenance attestation;
   - prints PASS/FAIL.
-- [ ] **S · 1h** Document the verification path in
+- [x] **S · 1h** Document the verification path in
   `docs/build-engine-operations.md` under a new "Verifying the release"
   section.
 

@@ -22,11 +22,11 @@ jobs:
         # base Ubuntu 24.04 container image used for fresh-host validation.
         target: [verify, install, ubuntu-24-smoke]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install uv
         if: matrix.target != 'ubuntu-24-smoke'
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload pytest JUnit XML
         if: matrix.target == 'verify' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pytest-junit-${{ github.run_id }}-${{ github.run_attempt }}
           path: reports/pytest.xml
@@ -114,10 +114,10 @@ jobs:
     runs-on: [self-hosted, linux, x64, ubuntu-24.04]
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"

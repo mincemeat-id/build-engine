@@ -81,8 +81,22 @@ GPG_SIGN=1 bash scripts/release-artifacts.sh
 
 - `dist/build-engine-<version>-linux-amd64`
 - `dist/SHA256SUMS`
-- `dist/build-engine-<version>-linux-amd64.sig` when `COSIGN_SIGN=1`
+- `dist/build-engine-<version>-linux-amd64.sig` and `.pem` when `COSIGN_SIGN=1`
 - `dist/build-engine-<version>-linux-amd64.asc` when GPG signing is enabled
+
+## Verifying The Release
+
+Release consumers should verify the binary before installing it:
+
+```bash
+scripts/verify-release.sh v0.1.0
+sudo BUILD_ENGINE_BINARY=build-engine-0.1.0-linux-amd64 bash scripts/install-build-engine.sh
+```
+
+The helper downloads the GitHub Release assets with `gh`, checks
+`SHA256SUMS`, verifies the cosign keyless blob signature against the GitHub
+OIDC issuer, verifies SLSA provenance with `slsa-verifier`, and confirms the
+CycloneDX SBOM is present.
 
 ## Diagnostics
 

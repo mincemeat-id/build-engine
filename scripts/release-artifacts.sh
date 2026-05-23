@@ -4,7 +4,8 @@ set -euo pipefail
 DIST_DIR="${DIST_DIR:-dist}"
 BINARY="${BUILD_ENGINE_BINARY:-${DIST_DIR}/build-engine}"
 VERSION="$("${BINARY}" --version | awk '{print $2}')"
-ARTIFACT="${DIST_DIR}/build-engine-${VERSION}-linux-amd64"
+RELEASE_ARCH="${RELEASE_ARCH:-linux-amd64}"
+ARTIFACT="${DIST_DIR}/build-engine-${VERSION}-${RELEASE_ARCH}"
 CHECKSUMS="${DIST_DIR}/SHA256SUMS"
 
 if [[ ! -x "$BINARY" ]]; then
@@ -13,28 +14,46 @@ if [[ ! -x "$BINARY" ]]; then
   exit 1
 fi
 
-cp "$BINARY" "$ARTIFACT"
-chmod 0755 "$ARTIFACT"
+write_checksums() {
+  (
+    cd "$DIST_DIR"
+    mapfile -t files < <(
+      find . -maxdepth 1 -type f \
+        -name "build-engine-${VERSION}-${RELEASE_ARCH}*" \
+        -printf '%f\n' | sort
+    )
+    if [[ "${#files[@]}" -eq 0 ]]; then
+      echo "no release files found for build-engine-${VERSION}-${RELEASE_ARCH}" >&2
+      exit 1
+    fi
+    sha256sum "${files[@]}" > "$(basename "$CHECKSUMS")"
+  )
+}
 
-(
-  cd "$DIST_DIR"
-  sha256sum "$(basename "$ARTIFACT")" > "$(basename "$CHECKSUMS")"
-)
+if [[ "${CHECKSUM_ONLY:-0}" != "1" ]]; then
+  cp "$BINARY" "$ARTIFACT"
+  chmod 0755 "$ARTIFACT"
 
-if [[ "${COSIGN_SIGN:-0}" == "1" ]]; then
-  if ! command -v cosign >/dev/null 2>&1; then
-    echo "COSIGN_SIGN=1 was set but cosign is not installed" >&2
-    exit 1
+  if [[ "${COSIGN_SIGN:-0}" == "1" ]]; then
+    if ! command -v cosign >/dev/null 2>&1; then
+      echo "COSIGN_SIGN=1 was set but cosign is not installed" >&2
+      exit 1
+    fi
+    cosign sign-blob --yes \
+      --output-signature "${ARTIFACT}.sig" \
+      --output-certificate "${ARTIFACT}.pem" \
+      "$ARTIFACT"
   fi
-  cosign sign-blob --yes --output-signature "${ARTIFACT}.sig" "$ARTIFACT"
+
+  if [[ -n "${GPG_SIGNING_KEY:-}" ]]; then
+    gpg --batch --yes --local-user "$GPG_SIGNING_KEY" --armor \
+      --detach-sign --output "${ARTIFACT}.asc" "$ARTIFACT"
+  elif [[ "${GPG_SIGN:-0}" == "1" ]]; then
+    gpg --batch --yes --armor --detach-sign --output "${ARTIFACT}.asc" "$ARTIFACT"
+  fi
 fi
 
-if [[ -n "${GPG_SIGNING_KEY:-}" ]]; then
-  gpg --batch --yes --local-user "$GPG_SIGNING_KEY" --armor \
-    --detach-sign --output "${ARTIFACT}.asc" "$ARTIFACT"
-elif [[ "${GPG_SIGN:-0}" == "1" ]]; then
-  gpg --batch --yes --armor --detach-sign --output "${ARTIFACT}.asc" "$ARTIFACT"
-fi
+write_checksums
 
 echo "Wrote $ARTIFACT"
 echo "Wrote $CHECKSUMS"
