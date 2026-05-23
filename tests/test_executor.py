@@ -327,6 +327,47 @@ def test_workspace_cleanup_removes_success_and_prunes_failed_retention(tmp_path:
     assert "failed-0" not in retained
 
 
+def test_workspace_prune_uses_marker_mtime_not_attempt_dir_mtime(tmp_path: Path) -> None:
+    """Retain the most recently *failed* workspaces even when their attempt dirs
+    were touched out of order (e.g. by late nested writes)."""
+
+    failures: list[Path] = []
+    for index in range(3):
+        failed = create_workspace(tmp_path, f"failed-{index}")
+        cleanup_workspace(failed, retain_failed=True, failed_keep=10)
+        failures.append(failed.attempt_dir)
+
+    # Make the FAILED marker mtimes reflect the failure order:
+    # failed-0 oldest, failed-2 newest.
+    for offset, attempt_dir in enumerate(failures):
+        marker = attempt_dir / "FAILED"
+        ts = 1_700_000_000 + offset * 100
+        os.utime(marker, (ts, ts))
+
+    # Now simulate a stale nested write into the *oldest* attempt dir that
+    # would bump its directory mtime above the newer attempts'. The marker
+    # mtime must still drive pruning order.
+    stale_child = failures[0] / "workspace" / "stale.txt"
+    stale_child.parent.mkdir(parents=True, exist_ok=True)
+    stale_child.write_text("noise", encoding="utf-8")
+    now = 1_800_000_000
+    os.utime(failures[0], (now, now))
+
+    # Trigger a prune that keeps only the two newest failures by marker mtime.
+    trigger = create_workspace(tmp_path, "failed-trigger")
+    trigger_marker_ts = 1_700_000_000 + 3 * 100
+    cleanup_workspace(trigger, retain_failed=True, failed_keep=2)
+    os.utime(trigger.attempt_dir / "FAILED", (trigger_marker_ts, trigger_marker_ts))
+    # Re-run prune with the marker timestamp set so ordering is deterministic.
+    cleanup_workspace(trigger, retain_failed=True, failed_keep=2)
+
+    retained = {path.name for path in (tmp_path / "jobs").iterdir()}
+    assert "failed-0" not in retained
+    assert "failed-1" not in retained
+    assert "failed-2" in retained
+    assert "failed-trigger" in retained
+
+
 def test_site_cache_maps_package_manager_mounts_and_reset(tmp_path: Path) -> None:
     cache = site_cache(tmp_path, "site-a", "pnpm")
 

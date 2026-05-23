@@ -185,7 +185,7 @@ def _validate_member(destination: Path, member: tarfile.TarInfo) -> None:
 def _prune_failed_workspaces(jobs_dir: Path, *, keep: int) -> None:
     failed = sorted(
         (path for path in jobs_dir.iterdir() if (path / "FAILED").exists()),
-        key=lambda path: path.stat().st_mtime,
+        key=lambda path: (path / "FAILED").stat().st_mtime,
         reverse=True,
     )
     for old_workspace in failed[keep:]:

@@ -148,9 +148,9 @@ Effort estimates are calendar hours for one senior engineer with full context.
 
 ### 1.4 Fix failed-workspace pruning by timestamp source
 
-- [ ] **S · 2h** Replace `path.stat().st_mtime` with the marker file's mtime,
+- [x] **S · 2h** Replace `path.stat().st_mtime` with the marker file's mtime,
   or record a sidecar JSON `{failed_at}` and sort by that.
-- [ ] **S · 1h** Add a regression test in `tests/test_executor.py` that
+- [x] **S · 1h** Add a regression test in `tests/test_executor.py` that
   retains the *newest* failures and prunes the oldest.
 
 ### 1.5 Harden self-hosted CI runner pinning
