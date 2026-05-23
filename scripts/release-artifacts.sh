@@ -3,9 +3,7 @@ set -euo pipefail
 
 DIST_DIR="${DIST_DIR:-dist}"
 BINARY="${BUILD_ENGINE_BINARY:-${DIST_DIR}/build-engine}"
-VERSION="$("${BINARY}" --version | awk '{print $2}')"
 RELEASE_ARCH="${RELEASE_ARCH:-linux-amd64}"
-ARTIFACT="${DIST_DIR}/build-engine-${VERSION}-${RELEASE_ARCH}"
 CHECKSUMS="${DIST_DIR}/SHA256SUMS"
 
 if [[ ! -x "$BINARY" ]]; then
@@ -14,16 +12,29 @@ if [[ ! -x "$BINARY" ]]; then
   exit 1
 fi
 
+VERSION="$("${BINARY}" --version | awk '{print $2}')"
+ARTIFACT_BASENAME="build-engine-${VERSION}-${RELEASE_ARCH}"
+ARTIFACT="${DIST_DIR}/${ARTIFACT_BASENAME}"
+
 write_checksums() {
   (
     cd "$DIST_DIR"
     mapfile -t files < <(
       find . -maxdepth 1 -type f \
-        -name "build-engine-${VERSION}-${RELEASE_ARCH}*" \
+        \( \
+          -name "${ARTIFACT_BASENAME}" \
+          -o -name "${ARTIFACT_BASENAME}.sig" \
+          -o -name "${ARTIFACT_BASENAME}.pem" \
+          -o -name "${ARTIFACT_BASENAME}.asc" \
+          -o -name "${ARTIFACT_BASENAME}.cdx.json" \
+          -o -name "${ARTIFACT_BASENAME}.provenance.intoto.jsonl" \
+          -o -name "${ARTIFACT_BASENAME}.sbom.intoto.jsonl" \
+          -o -name "mincemeat-build-engine_${VERSION}_*.deb" \
+        \) \
         -printf '%f\n' | sort
     )
     if [[ "${#files[@]}" -eq 0 ]]; then
-      echo "no release files found for build-engine-${VERSION}-${RELEASE_ARCH}" >&2
+      echo "no release files found for ${ARTIFACT_BASENAME}" >&2
       exit 1
     fi
     sha256sum "${files[@]}" > "$(basename "$CHECKSUMS")"

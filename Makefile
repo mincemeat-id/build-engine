@@ -1,4 +1,4 @@
-.PHONY: verify lint fmt typecheck security test coverage binary-smoke release-artifacts ubuntu-24-smoke contracts-sync deploy-check hooks-install hooks-uninstall
+.PHONY: verify lint fmt typecheck security test coverage binary-smoke deb release-artifacts release ubuntu-24-smoke contracts-sync deploy-check hooks-install hooks-uninstall
 
 verify: contracts-sync
 	uv run python -m compileall src tests
@@ -33,8 +33,17 @@ binary-smoke:
 	uv run pyinstaller packaging/pyinstaller/build-engine.spec --noconfirm
 	./dist/build-engine --version
 
+deb: binary-smoke
+	bash packaging/deb/build-deb.sh
+
 release-artifacts: binary-smoke
 	bash scripts/release-artifacts.sh
+
+release:
+ifndef VERSION
+	$(error VERSION is required, for example: make release VERSION=0.2.0)
+endif
+	bash scripts/prepare-release.sh "$(VERSION)"
 
 ubuntu-24-smoke:
 	bash scripts/smoke-ubuntu-24.04.sh

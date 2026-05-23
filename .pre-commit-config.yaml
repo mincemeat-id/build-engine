@@ -1,21 +1,8 @@
+# Optional upstream-bot config only. Local developers should install the tracked
+# git hooks with `make hooks-install`; `.githooks/` is the canonical local gate.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.0
     hooks:
       - id: ruff-check
-        args: [--fix]
       - id: ruff-format
-
-  - repo: local
-    hooks:
-      - id: ty-check
-        name: ty check
-        entry: uv run ty check
-        language: system
-        pass_filenames: false
-      - id: pytest
-        name: pytest
-        entry: uv run pytest
-        language: system
-        pass_filenames: false
-

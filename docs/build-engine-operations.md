@@ -24,10 +24,10 @@ sudo apt-get install -y ca-certificates curl docker.io tzdata
 sudo systemctl enable --now docker
 ```
 
-Install or upgrade the binary:
+Install or upgrade the Debian package:
 
 ```bash
-sudo BUILD_ENGINE_BINARY=dist/build-engine bash scripts/install-build-engine.sh
+sudo apt-get install -y ./mincemeat-build-engine_0.1.0_amd64.deb
 ```
 
 Register the engine with a one-time token from coreapp:
@@ -56,11 +56,11 @@ that service uid/gid, and contain an ASCII `engine_secret` of at least 32 bytes.
 ## Upgrade
 
 The v1 engine does not self-update. Drain the engine in coreapp when possible,
-then replace the binary:
+then replace the package:
 
 ```bash
 sudo systemctl stop build-engine
-sudo BUILD_ENGINE_BINARY=build-engine.new bash scripts/install-build-engine.sh
+sudo apt-get install -y ./mincemeat-build-engine_0.1.1_amd64.deb
 sudo systemctl start build-engine
 sudo build-engine doctor
 ```
@@ -68,10 +68,12 @@ sudo build-engine doctor
 ## Release Artifacts
 
 Build the PyInstaller one-file binary, then produce checksums and optional
-signatures:
+signatures. The Debian package is built from the same binary and included in
+release checksums.
 
 ```bash
 uv run pyinstaller packaging/pyinstaller/build-engine.spec --noconfirm
+make deb
 bash scripts/release-artifacts.sh
 COSIGN_SIGN=1 bash scripts/release-artifacts.sh
 GPG_SIGN=1 bash scripts/release-artifacts.sh
@@ -80,9 +82,12 @@ GPG_SIGN=1 bash scripts/release-artifacts.sh
 `scripts/release-artifacts.sh` writes:
 
 - `dist/build-engine-<version>-linux-amd64`
+- `dist/mincemeat-build-engine_<version>_amd64.deb`
 - `dist/SHA256SUMS`
 - `dist/build-engine-<version>-linux-amd64.sig` and `.pem` when `COSIGN_SIGN=1`
 - `dist/build-engine-<version>-linux-amd64.asc` when GPG signing is enabled
+- `dist/build-engine-<version>-linux-amd64.cdx.json` when the release workflow
+  generated the CycloneDX SBOM
 
 ## Verifying The Release
 
@@ -90,7 +95,7 @@ Release consumers should verify the binary before installing it:
 
 ```bash
 scripts/verify-release.sh v0.1.0
-sudo BUILD_ENGINE_BINARY=build-engine-0.1.0-linux-amd64 bash scripts/install-build-engine.sh
+sudo apt-get install -y ./mincemeat-build-engine_0.1.0_amd64.deb
 ```
 
 The helper downloads the GitHub Release assets with `gh`, checks
@@ -223,3 +228,7 @@ PyInstaller binary produced by the `verify` step and runs
 verifies that the on-disk layout the production deploy depends on
 (binary, systemd unit, default config, sysconfdir layout) still installs
 cleanly on the runner image without root privileges.
+
+The release workflow builds a Debian package with `packaging/deb/build-deb.sh`
+from that same staged installer, so the smoke path and package layout stay in
+lockstep.

@@ -19,6 +19,9 @@ The installer points git at this directory:
 git config core.hooksPath .githooks
 ```
 
+`.pre-commit-config.yaml` is kept only for upstream bots that already know how
+to run `pre-commit`; `.githooks/` is the canonical local hook path.
+
 To remove:
 
 ```bash
@@ -47,4 +50,3 @@ git push --no-verify ...
 
 The tracked `pre-push` hook rejects `BYPASS_HOOKS=1` on protected refs:
 `master`, `main`, `release/*`, and tags.
-

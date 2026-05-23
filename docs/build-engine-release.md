@@ -26,6 +26,16 @@ Optional release inputs:
 
 ## Trigger
 
+Maintainers cut a release with:
+
+```bash
+make release VERSION=X.Y.Z
+```
+
+The target updates `pyproject.toml`, refreshes `uv.lock`, adds the matching
+changelog section, commits, tags `vX.Y.Z`, and pushes with `git push
+--follow-tags`.
+
 The release workflow is triggered by tags:
 
 ```yaml
@@ -73,9 +83,10 @@ developer path. The job:
    `build-engine --version` and `build-engine doctor --json`.
 6. Renames the binary to `build-engine-X.Y.Z-linux-amd64`.
 7. Generates a CycloneDX source SBOM.
-8. Signs the binary with cosign keyless signing.
-9. Generates SLSA provenance and SBOM attestations.
-10. Generates `SHA256SUMS` for the binary, SBOM, signatures, certificates, and
+8. Builds `mincemeat-build-engine_X.Y.Z_amd64.deb` under `packaging/deb/`.
+9. Signs the binary with cosign keyless signing.
+10. Generates SLSA provenance and SBOM attestations.
+11. Generates `SHA256SUMS` for the binary, Debian package, SBOM, signatures, certificates, and
     attestation bundles.
 
 The build must not depend on host-global state beyond Docker, iptables support,
@@ -114,6 +125,7 @@ signing secrets are avoided where possible.
 The GitHub release uploads:
 
 - `build-engine-X.Y.Z-linux-amd64`
+- `mincemeat-build-engine_X.Y.Z_amd64.deb`
 - `SHA256SUMS`
 - `build-engine-X.Y.Z-linux-amd64.sig`
 - `build-engine-X.Y.Z-linux-amd64.pem`
@@ -128,7 +140,7 @@ reviewed before publication.
 ## Downstream Verification
 
 Consumers verify a release by downloading the binary, checksum file, signature,
-and attestations, then checking:
+Debian package, and attestations, then checking:
 
 1. `sha256sum --check SHA256SUMS`
 2. `cosign verify-blob` with the published certificate identity

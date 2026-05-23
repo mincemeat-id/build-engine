@@ -219,6 +219,13 @@ jobs:
           RELEASE_BINARY: ${{ steps.artifact.outputs.binary }}
         run: cp "$BUNDLE_PATH" "${RELEASE_BINARY}.sbom.intoto.jsonl"
 
+      - name: Build Debian package
+        env:
+          BUILD_ENGINE_BINARY: ${{ steps.artifact.outputs.binary }}
+          RELEASE_ARCH: ${{ matrix.target.arch }}
+          VERSION: ${{ steps.artifact.outputs.version }}
+        run: bash packaging/deb/build-deb.sh
+
       - name: Refresh SHA256SUMS
         env:
           CHECKSUM_ONLY: "1"
@@ -228,14 +235,22 @@ jobs:
       - name: Verify clean artifact layout
         env:
           ARTIFACT: ${{ steps.artifact.outputs.artifact }}
+          RELEASE_ARCH: ${{ matrix.target.arch }}
+          VERSION: ${{ steps.artifact.outputs.version }}
         run: |
           set -euo pipefail
+          case "$RELEASE_ARCH" in
+            linux-amd64) deb_arch=amd64 ;;
+            linux-arm64) deb_arch=arm64 ;;
+            *) echo "::error::unsupported release arch $RELEASE_ARCH"; exit 1 ;;
+          esac
           test -x "dist/$ARTIFACT"
           test -f "dist/$ARTIFACT.sig"
           test -f "dist/$ARTIFACT.pem"
           test -f "dist/$ARTIFACT.cdx.json"
           test -f "dist/$ARTIFACT.provenance.intoto.jsonl"
           test -f "dist/$ARTIFACT.sbom.intoto.jsonl"
+          test -f "dist/mincemeat-build-engine_${VERSION}_${deb_arch}.deb"
           (cd dist && sha256sum --check SHA256SUMS)
 
       - name: Upload release artifact bundle
@@ -245,6 +260,7 @@ jobs:
           path: |
             dist/${{ steps.artifact.outputs.artifact }}
             dist/${{ steps.artifact.outputs.artifact }}.*
+            dist/mincemeat-build-engine_*.deb
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
@@ -312,6 +328,7 @@ jobs:
           draft: ${{ github.event_name == 'workflow_dispatch' }}
           files: |
             release-upload/build-engine-*
+            release-upload/mincemeat-build-engine_*.deb
             release-upload/SHA256SUMS
 
   align-images:

@@ -75,12 +75,12 @@ with both checkouts present.
 Release mechanics are documented in
 [`docs/build-engine-release.md`](docs/build-engine-release.md). In short:
 
-1. Update `pyproject.toml` version and add a matching `CHANGELOG.md` entry.
-2. Run `make verify` on a clean checkout.
-3. Push a `vX.Y.Z` tag.
-4. Let the GitHub Actions release workflow build, verify, sign, attest, and
-   upload the Linux artifact set.
-5. Verify the published artifact with `scripts/verify-release.sh` once the
+1. Run `make verify` on a clean checkout.
+2. Run `make release VERSION=X.Y.Z` to bump metadata, add the changelog
+   heading, commit, tag, and push with `git push --follow-tags`.
+3. Let the GitHub Actions release workflow build, verify, sign, attest, and
+   upload the Linux binary and Debian package artifact set.
+4. Verify the published artifact with `scripts/verify-release.sh` once the
    downstream helper lands.
 
 The test suite fails when the project version is missing from the changelog, so

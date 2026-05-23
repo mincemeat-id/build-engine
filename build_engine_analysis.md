@@ -469,19 +469,19 @@ Effort estimates are calendar hours for one senior engineer with full context.
 > **Goal:** Tag → build → ship in one operation.
 > **Estimated total:** ~1.5 days.
 
-- [ ] **S · 2h** Single-source version: read `__version__` via
+- [x] **S · 2h** Single-source version: read `__version__` via
   `importlib.metadata`. Delete the hard-coded literal in
   `src/build_engine/__init__.py`. **[L-7]**
-- [ ] **S · 2h** Add `make release VERSION=x.y.z` that bumps
+- [x] **S · 2h** Add `make release VERSION=x.y.z` that bumps
   `pyproject.toml`, appends a `CHANGELOG.md` heading, commits, tags, and
   pushes (with `git push --follow-tags`).
-- [ ] **S · 2h** Trim `optional_hiddenimports` in the PyInstaller spec to
+- [x] **S · 2h** Trim `optional_hiddenimports` in the PyInstaller spec to
   imports the package actually uses. **[M-26]**
-- [ ] **S · 2h** Extend `release-artifacts.sh` to include `.sig`, `.asc`,
+- [x] **S · 2h** Extend `release-artifacts.sh` to include `.sig`, `.asc`,
   and SBOM hashes in `SHA256SUMS`. **[M-27]**
-- [ ] **S · 2h** Convert `scripts/install-build-engine.sh` into a `.deb`
+- [x] **S · 2h** Convert `scripts/install-build-engine.sh` into a `.deb`
   build under `packaging/deb/` (or remove the design promise). **[M-25]**
-- [ ] **S · 1h** Reconcile `.pre-commit-config.yaml` and `.githooks/` —
+- [x] **S · 1h** Reconcile `.pre-commit-config.yaml` and `.githooks/` —
   keep one. Recommend: `.githooks/` (already wired into `make
   hooks-install`); make `.pre-commit-config.yaml` opt-in for upstream
   bots only. **[M-28]**

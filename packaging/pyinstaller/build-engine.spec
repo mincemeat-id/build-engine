@@ -5,15 +5,11 @@ from importlib.util import find_spec
 
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import copy_metadata
 
 repo_root = Path(SPECPATH).parents[1]
 optional_hiddenimports = [
-    "aiosqlite",
-    "httpx",
     "websockets",
-    "pydantic",
-    "pydantic_settings",
-    "structlog",
 ]
 hiddenimports = sorted(
     {
@@ -21,7 +17,7 @@ hiddenimports = sorted(
         *(name for name in optional_hiddenimports if find_spec(name) is not None),
     }
 )
-datas = []
+datas = copy_metadata("mincemeat-build-engine")
 for package in ("tzdata",):
     package_spec = find_spec(package)
     if package_spec is not None and package_spec.submodule_search_locations is not None:
