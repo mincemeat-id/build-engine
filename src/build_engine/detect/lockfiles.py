@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from build_engine.detect.package_json import PackageJson, load_package_json
 
@@ -65,12 +65,21 @@ def parse_package_manager(value: str) -> tuple[PackageManager, str | None]:
     name, separator, version = value.partition("@")
     if not name:
         raise PackageManagerDetectionError("packageManager must name npm, pnpm, yarn, or bun")
-    if name not in PACKAGE_MANAGERS:
-        supported = ", ".join(sorted(PACKAGE_MANAGERS))
-        raise PackageManagerDetectionError(
-            f"Unsupported packageManager {name!r}; supported managers: {supported}",
-        )
-    return cast("PackageManager", name), version if separator and version else None
+    parsed_version = version if separator and version else None
+    match name:
+        case "npm":
+            return "npm", parsed_version
+        case "pnpm":
+            return "pnpm", parsed_version
+        case "yarn":
+            return "yarn", parsed_version
+        case "bun":
+            return "bun", parsed_version
+        case _:
+            supported = ", ".join(sorted(PACKAGE_MANAGERS))
+            raise PackageManagerDetectionError(
+                f"Unsupported packageManager {name!r}; supported managers: {supported}",
+            )
 
 
 def install_command(

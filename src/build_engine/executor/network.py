@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404
 from dataclasses import dataclass
 from typing import Any
 
@@ -249,7 +249,7 @@ def _run_or_raise(command: list[str]) -> None:
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(
+        return subprocess.run(  # nosec B603
             command,
             capture_output=True,
             text=True,

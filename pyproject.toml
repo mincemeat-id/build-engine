@@ -18,9 +18,14 @@ build-engine = "build_engine.cli.commands:main"
 
 [dependency-groups]
 dev = [
+  "bandit>=1.9.4",
+  "coverage[toml]>=7.14.0",
+  "hypothesis>=6.152.9",
+  "mypy>=2.1.0",
   "pre-commit>=4.5.0",
   "pyinstaller>=6.17.0",
   "pytest>=9.0.0",
+  "pytest-cov>=7.1.0",
   "ruff>=0.15.0",
   "ty>=0.0.36",
 ]
@@ -49,6 +54,14 @@ select = ["ANN", "B", "E", "F", "I", "SIM", "UP"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["build_engine"]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
 
 [tool.ty.environment]
 python-version = "3.14"

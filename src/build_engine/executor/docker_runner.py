@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import json
 import os
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -120,7 +120,7 @@ def resolve_image_reference(
 def pull_image(image: str, *, docker_bin: str = "docker", timeout_seconds: float = 300.0) -> None:
     """Pull the selected builder image by tag or digest."""
 
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603
         [docker_bin, "pull", image],
         capture_output=True,
         text=True,
@@ -140,6 +140,7 @@ def docker_run_args(
 ) -> list[str]:
     """Build the hardened `docker run` argv for a build command."""
 
+    tmpfs_mount = "/tmp" + ":rw,noexec,nosuid,size=512m"  # nosec B108
     args = [
         docker_bin,
         "run",
@@ -160,7 +161,7 @@ def docker_run_args(
         "--security-opt",
         "no-new-privileges",
         "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=512m",
+        tmpfs_mount,
         *spec.network_guard.docker_args(),
         "--workdir",
         "/workspace",

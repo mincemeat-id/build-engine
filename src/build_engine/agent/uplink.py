@@ -165,7 +165,8 @@ class BuildEngineUplink:
         if not self.credentials.backend_url and not self.config.backend_url:
             raise ProtocolError("backend_url is required for uplink")
         backend_url = self.credentials.backend_url or self.config.backend_url
-        assert backend_url is not None
+        if backend_url is None:
+            raise ProtocolError("backend_url is required for uplink")
         url = websocket_url(backend_url)
         headers = uplink_headers(self.config, self.credentials)
         websocket = await self.connector(url, headers)

@@ -1,10 +1,11 @@
-.PHONY: verify lint fmt typecheck test binary-smoke release-artifacts ubuntu-24-smoke contracts-sync deploy-check hooks-install hooks-uninstall
+.PHONY: verify lint fmt typecheck security test coverage binary-smoke release-artifacts ubuntu-24-smoke contracts-sync deploy-check hooks-install hooks-uninstall
 
 verify: contracts-sync
 	uv run python -m compileall src tests
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run ty check
+	uv run bandit -r src/
 	uv run pytest
 	$(MAKE) binary-smoke
 
@@ -19,8 +20,14 @@ fmt:
 typecheck:
 	uv run ty check
 
+security:
+	uv run bandit -r src/
+
 test:
 	uv run pytest
+
+coverage:
+	uv run pytest --cov=build_engine --cov-report=xml:coverage.xml --cov-report=html
 
 binary-smoke:
 	uv run pyinstaller packaging/pyinstaller/build-engine.spec --noconfirm

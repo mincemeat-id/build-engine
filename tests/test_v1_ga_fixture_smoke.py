@@ -1,4 +1,4 @@
-"""Stage 8 end-to-end hardening drills."""
+"""V1 GA fixture smoke tests and hardening drills."""
 
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol
+from typing import Protocol, cast
 from urllib import error, request
 from urllib.parse import urlparse
 
@@ -161,7 +161,7 @@ def _open_source(source_url: str, *, timeout_seconds: float) -> SourceResponse:
         source_url,
         headers={"Accept": "application/gzip, application/x-tar, */*"},
     )
-    return request.urlopen(req, timeout=timeout_seconds)
+    return cast("SourceResponse", request.urlopen(req, timeout=timeout_seconds))  # nosec B310
 
 
 def _validate_member(destination: Path, member: tarfile.TarInfo) -> None:

@@ -275,37 +275,37 @@ Effort estimates are calendar hours for one senior engineer with full context.
 
 ### 4.1 Coverage and structure
 
-- [ ] **S · 2h** Add `coverage[toml]` dev dep, `pytest-cov` plugin, and
+- [x] **S · 2h** Add `coverage[toml]` dev dep, `pytest-cov` plugin, and
   `make coverage` producing `coverage.xml` and an HTML report.
-- [ ] **S · 1h** Add `tests/conftest.py` with shared fixtures (tmp state
+- [x] **S · 1h** Add `tests/conftest.py` with shared fixtures (tmp state
   dir, engine config builder, fake credentials).
-- [ ] **S · 1h** Rename `test_hardening.py` ↔ `test_v1_ga_fixture_smoke.py`
+- [x] **S · 1h** Rename `test_hardening.py` ↔ `test_v1_ga_fixture_smoke.py`
   (more accurate). **[M-20]**
-- [ ] **S · 2h** Generate real lockfiles for the V1 GA fixtures via
+- [x] **S · 2h** Generate real lockfiles for the V1 GA fixtures via
   `tests/fixtures/sites/_regenerate.sh`. **[M-23]**
 
 ### 4.2 New test categories
 
-- [ ] **M · 4h** Add a fuzz / property suite for `validate_envelope` and
+- [x] **M · 4h** Add a fuzz / property suite for `validate_envelope` and
   `decode_frame` (Hypothesis) — payloads, types, sizes, sequence bounds.
-- [ ] **M · 4h** Add a contract-pin test that diffs
+- [x] **M · 4h** Add a contract-pin test that diffs
   `contracts/openapi/build-engine.openapi.json` against a known-good SHA
   and instructs the operator to re-run `make contracts-sync`.
-- [ ] **M · 6h** Add a `tests/integration/test_docker.py` (opt-in via
+- [x] **M · 6h** Add a `tests/integration/test_docker.py` (opt-in via
   `BUILD_ENGINE_DOCKER_TESTS=1`) that runs a real `docker run` against the
   GA `hugo:latest` image fixture and validates packaged output.
-- [ ] **M · 4h** Add a `tests/integration/test_uplink.py` that spins up an
+- [x] **M · 4h** Add a `tests/integration/test_uplink.py` that spins up an
   in-process `websockets.serve` and drives the full reconnect / replay
   state machine.
-- [ ] **S · 2h** Add `mypy --strict` parallel-to-`ty` gate on a CI label so
+- [x] **S · 2h** Add `mypy --strict` parallel-to-`ty` gate on a CI label so
   the two checkers do not silently disagree.
-- [ ] **S · 2h** Add `bandit -r src/` to CI for security lint.
+- [x] **S · 2h** Add `bandit -r src/` to CI for security lint.
 
 ### 4.3 CI feedback quality
 
-- [ ] **S · 2h** Make `pytest` emit JUnit XML and upload as a workflow
+- [x] **S · 2h** Make `pytest` emit JUnit XML and upload as a workflow
   artifact so flakiness can be tracked.
-- [ ] **S · 2h** Add `make ubuntu-24-smoke` to CI as a matrix entry that
+- [x] **S · 2h** Add `make ubuntu-24-smoke` to CI as a matrix entry that
   runs inside an `ubuntu:24.04` container so `install-build-engine.sh` is
   exercised by every PR.
 

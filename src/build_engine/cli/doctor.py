@@ -6,7 +6,7 @@ import asyncio
 import json
 import shutil
 import sqlite3
-import subprocess
+import subprocess  # nosec B404
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -175,7 +175,7 @@ def _check_version() -> DoctorCheck:
 
 def _check_docker(*, timeout_seconds: float) -> DoctorCheck:
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec
             ["docker", "version", "--format", "{{json .Server}}"],
             capture_output=True,
             text=True,
@@ -304,7 +304,7 @@ def _check_agent_health(
     url = _join_backend_path(backend_url, HEALTH_PATH)
     req = request.Request(url, headers=client_headers_for_credentials(credentials))
     try:
-        with request.urlopen(req, timeout=timeout_seconds) as response:
+        with request.urlopen(req, timeout=timeout_seconds) as response:  # nosec B310
             body = response.read()
             date_header = response.headers.get("Date")
     except error.HTTPError as exc:

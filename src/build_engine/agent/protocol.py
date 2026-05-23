@@ -176,7 +176,7 @@ def validate_envelope(
         if key in data and (not isinstance(data[key], str) or not data[key]):
             raise ProtocolError(f"Envelope {key} must be a non-empty string")
     if "seq" in data:
-        if not isinstance(data["seq"], int) or data["seq"] < 0:
+        if not isinstance(data["seq"], int) or isinstance(data["seq"], bool) or data["seq"] < 0:
             raise ProtocolError("Envelope seq must be a non-negative integer")
         if data.get("attempt_id") is None:
             raise ProtocolError("Envelope seq requires attempt_id")

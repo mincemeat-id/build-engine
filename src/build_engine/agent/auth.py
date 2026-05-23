@@ -114,7 +114,7 @@ class BuildEngineAuthClient:
             headers={"Content-Type": "application/json", "Accept": "application/json"},
         )
         try:
-            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:  # nosec B310
                 data = response.read()
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")

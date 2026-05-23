@@ -11,7 +11,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from build_engine.agent.protocol import (
     OUTBOUND_MESSAGE_TYPES,
@@ -424,10 +424,13 @@ class SQLiteEventOutbox:
         ).fetchall()
 
     def _next_seq_row_sync(self, attempt_id: str) -> sqlite3.Row:
-        return self._db.execute(
-            "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM events WHERE attempt_id = ?",
-            (attempt_id,),
-        ).fetchone()
+        return cast(
+            "sqlite3.Row",
+            self._db.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM events WHERE attempt_id = ?",
+                (attempt_id,),
+            ).fetchone(),
+        )
 
 
 def _create_v1_schema(db: sqlite3.Connection) -> None:
@@ -486,10 +489,13 @@ def _job_row(
     build_job_id: str,
     attempt_id: str,
 ) -> sqlite3.Row | None:
-    return db.execute(
-        "SELECT * FROM jobs WHERE build_job_id = ? AND attempt_id = ?",
-        (build_job_id, attempt_id),
-    ).fetchone()
+    return cast(
+        "sqlite3.Row | None",
+        db.execute(
+            "SELECT * FROM jobs WHERE build_job_id = ? AND attempt_id = ?",
+            (build_job_id, attempt_id),
+        ).fetchone(),
+    )
 
 
 def _job_from_row(row: sqlite3.Row) -> JobRecord:

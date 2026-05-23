@@ -5,6 +5,7 @@ import asyncio
 import shutil
 import sys
 from collections.abc import Callable, Sequence
+from typing import cast
 
 from build_engine import __version__
 from build_engine.agent.auth import (
@@ -30,7 +31,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = _build_parser()
     args = parser.parse_args(argv)
-    handler = args.handler
+    handler = cast("Callable[[argparse.Namespace], int]", args.handler)
     return handler(args)
 
 
