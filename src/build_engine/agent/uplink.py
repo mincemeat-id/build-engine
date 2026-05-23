@@ -18,6 +18,7 @@ from build_engine.agent.heartbeat import HeartbeatSnapshot, idle_heartbeat
 from build_engine.agent.protocol import (
     INBOUND_MESSAGE_TYPES,
     OUTBOUND_MESSAGE_TYPES,
+    PROTOCOL_VERSION,
     Envelope,
     ProtocolError,
     attempt_fields,
@@ -314,7 +315,7 @@ class BuildEngineUplink:
         if payload.get("engine_id") != self.credentials.engine_id:
             raise ProtocolError("welcome engine_id does not match credentials")
         negotiated = payload.get("proto_negotiated")
-        if negotiated != self.config.proto_version:
+        if negotiated != PROTOCOL_VERSION:
             raise ProtocolError("welcome negotiated an unsupported protocol version")
         interval = payload.get("heartbeat_interval_seconds")
         if isinstance(interval, int) and interval > 0:
@@ -324,7 +325,7 @@ class BuildEngineUplink:
     async def _send_hello(self, websocket: WebSocketLike) -> None:
         payload = {
             "version": __version__,
-            "proto_version": self.config.proto_version,
+            "proto_version": PROTOCOL_VERSION,
             "image_manifest_version": self.config.image_manifest_version,
             "capabilities": config_capabilities(self.config),
             "max_concurrency": self.config.max_concurrency,
@@ -418,7 +419,7 @@ def uplink_headers(config: EngineConfig, credentials: EngineCredentials) -> dict
     headers = client_headers_for_credentials(credentials)
     headers.update(
         {
-            "X-Build-Engine-Proto": str(config.proto_version),
+            "X-Build-Engine-Proto": str(PROTOCOL_VERSION),
             "X-Build-Engine-Version": __version__,
             "X-Image-Manifest-Version": config.image_manifest_version,
         }

@@ -7,9 +7,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from build_engine.agent.protocol import PROTOCOL_VERSION
+
 DEFAULT_CONFIG_PATH = Path("/etc/mincemeat/build-engine/config.toml")
 DEFAULT_CREDENTIALS_PATH = Path("/etc/mincemeat/build-engine/credentials.toml")
 DEFAULT_STATE_DIR = Path("/var/lib/build-engine")
+
+# Pinned to the build-engine-images shipped manifest version. Bumped only in
+# lockstep with `../build-engine-images/manifest.json`; drift is detected by
+# `scripts/sync_contracts.py` so registration never advertises an unreleased
+# manifest version.
+DEFAULT_IMAGE_MANIFEST_VERSION = "0.1.0-dev"
+
+# V1 GA builder-image matrix. Aligned with
+# `../build-engine-images/manifest.json` and the design's framework matrix.
+DEFAULT_IMAGES: tuple[str, ...] = ("node:22", "bun:1", "hugo:latest", "zola:latest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,10 +59,9 @@ class EngineConfig:
     cache_ttl_days: int = DEFAULTS.cache_ttl_days
     credentials_path: Path = DEFAULT_CREDENTIALS_PATH
     state_dir: Path = DEFAULT_STATE_DIR
-    image_manifest_version: str = "1.0.0"
-    images: tuple[str, ...] = ("node:20", "node:22", "bun:1", "hugo:latest")
+    image_manifest_version: str = DEFAULT_IMAGE_MANIFEST_VERSION
+    images: tuple[str, ...] = DEFAULT_IMAGES
     network_blocklist: tuple[str, ...] = ()
-    proto_version: int = 1
     os: str = "linux"
     arch: str = "amd64"
 
@@ -164,7 +175,7 @@ def config_capabilities(config: EngineConfig) -> dict[str, object]:
         "arch": config.arch,
         "max_concurrency": config.max_concurrency,
         "images": list(config.images),
-        "proto_version": config.proto_version,
+        "proto_version": PROTOCOL_VERSION,
         "image_manifest_version": config.image_manifest_version,
     }
 
@@ -184,10 +195,9 @@ def _config_defaults() -> dict[str, Any]:
         "cache_ttl_days": DEFAULTS.cache_ttl_days,
         "credentials_path": DEFAULT_CREDENTIALS_PATH,
         "state_dir": DEFAULT_STATE_DIR,
-        "image_manifest_version": "1.0.0",
-        "images": ("node:20", "node:22", "bun:1", "hugo:latest"),
+        "image_manifest_version": DEFAULT_IMAGE_MANIFEST_VERSION,
+        "images": DEFAULT_IMAGES,
         "network_blocklist": (),
-        "proto_version": 1,
         "os": "linux",
         "arch": "amd64",
     }
@@ -218,7 +228,6 @@ def _coerce_env_value(key: str, value: str) -> object:
         "artifact_max_bytes",
         "cache_site_max_bytes",
         "cache_ttl_days",
-        "proto_version",
     }:
         return int(value)
     if key == "container_cpus":

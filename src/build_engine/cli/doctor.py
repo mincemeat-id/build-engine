@@ -95,7 +95,7 @@ def run_doctor(
 ) -> DoctorReport:
     """Run host, credential, backend, executor, and queue diagnostics."""
 
-    checks: list[DoctorCheck] = [_check_version(config)]
+    checks: list[DoctorCheck] = [_check_version()]
     credentials: EngineCredentials | None = None
 
     try:
@@ -165,13 +165,7 @@ def render_json(report: DoctorReport) -> str:
     return json.dumps(report.to_dict(), sort_keys=True)
 
 
-def _check_version(config: EngineConfig) -> DoctorCheck:
-    if config.proto_version != PROTOCOL_VERSION:
-        return _fail(
-            "version",
-            "configured protocol version does not match the bundled protocol",
-            {"version": __version__, "configured_proto": config.proto_version},
-        )
+def _check_version() -> DoctorCheck:
     return _ok(
         "version",
         f"build-engine {__version__}, protocol v{PROTOCOL_VERSION}",
@@ -361,7 +355,7 @@ def _check_wss_handshake(
     except (OSError, ProtocolError, AuthError, TimeoutError, websockets.WebSocketException) as exc:
         return _fail("wss_handshake", str(exc))
     proto = welcome.payload.get("proto_negotiated")
-    if welcome.payload.get("engine_id") != credentials.engine_id or proto != config.proto_version:
+    if welcome.payload.get("engine_id") != credentials.engine_id or proto != PROTOCOL_VERSION:
         return _fail("wss_handshake", "welcome frame did not negotiate this engine/protocol")
     return _ok("wss_handshake", "welcome frame received", {"proto_negotiated": proto})
 

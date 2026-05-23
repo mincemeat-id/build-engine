@@ -86,7 +86,10 @@ in later stages.
 
 ## Compatibility Matrix
 
-V1 GA framework support is locked by the design and builder-image contract:
+V1 GA framework support is locked by the design and builder-image contract.
+The default builder-image set advertised at registration is `node:22`,
+`bun:1`, `hugo:latest`, and `zola:latest` — the V1 GA matrix shipped in
+`build-engine-images`.
 
 | Framework | Preferred image | Output directory |
 |-----------|-----------------|------------------|
@@ -98,18 +101,17 @@ V1 GA framework support is locked by the design and builder-image contract:
 | VuePress | `node:22` | `dist/` |
 | Gatsby | `node:22` | `public/` |
 | Hugo | `hugo:latest` | `public/` |
+| Zola | `zola:latest` | `public/` |
 | Next.js static export | `node:22` | `out/` |
 | Nuxt generate | `node:22` | `.output/public/` |
 | SvelteKit static | `node:22` | `build/` |
+| Angular static | `node:22` | `dist/<project>/browser/` |
+| Remix SPA | `node:22` | `build/client/` |
 | Generic | `node:22` | inferred |
 
-V1.x candidates after fixtures, docs, images, scans, and size gates:
-
-| Framework | Status |
-|-----------|--------|
-| Zola | Candidate |
-| Angular static | Candidate |
-| Remix SPA mode | Candidate |
+Angular static and Remix SPA framework profiles ship as opt-in via the
+`framework` override; auto-detection follows the existing dependency- and
+script-marker ordering in `detect/framework.py`.
 
 ## Verification
 

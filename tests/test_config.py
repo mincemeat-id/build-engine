@@ -49,6 +49,8 @@ def test_config_layering_prefers_env_and_cli_over_files(tmp_path: Path) -> None:
 
 
 def test_config_capabilities_match_openapi_contract(tmp_path: Path) -> None:
+    from build_engine.agent.protocol import PROTOCOL_VERSION
+
     config = load_config(
         config_path=tmp_path / "missing.toml",
         overrides={
@@ -65,7 +67,7 @@ def test_config_capabilities_match_openapi_contract(tmp_path: Path) -> None:
         "arch": "amd64",
         "max_concurrency": 2,
         "images": ["node:22", "hugo:latest"],
-        "proto_version": 1,
+        "proto_version": PROTOCOL_VERSION,
         "image_manifest_version": "1.2.3",
     }
 

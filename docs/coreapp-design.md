@@ -218,12 +218,25 @@ Agent endpoints:
 |--------|------|---------|
 | `POST` | `/api/v1/build-engines/agent/register` | One-time token registration. |
 | `POST` | `/api/v1/build-engines/agent/sessions` | Mint short-lived JWT. |
-| `POST` | `/api/v1/build-engines/agent/heartbeats` | Liveness/capacity. |
+| `POST` | `/api/v1/build-engines/agent/heartbeats` | Liveness/capacity (deprecated; WSS heartbeat envelope is authoritative). |
 | `WS` | `/api/v1/build-engines/agent/ws` | Job/control/status/log stream. |
 | `POST` | `/api/v1/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/artifact-upload-url` | Presigned staging PUT URL. |
 | `POST` | `/api/v1/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/ack` | Attempt state acknowledgement. |
 | `POST` | `/api/v1/build-engines/agent/metrics` | 15s metrics rollup. |
 | `GET` | `/api/v1/build-engines/agent/health` | Doctor endpoint. |
+
+### Heartbeat transport decision (Stage 2)
+
+The agent emits heartbeats exclusively over the WSS `heartbeat` envelope on
+`/api/v1/build-engines/agent/ws`. The HTTP fallback
+`POST /api/v1/build-engines/agent/heartbeats` was retained in the OpenAPI
+contract as a planned fallback but is **not** wired in the engine and is now
+flagged for **deprecation** in coreapp. New code MUST NOT call it; coreapp
+will remove the route in a future contract bump once the WSS replay/resume
+guarantees have soaked in production. Until then, the engine's only
+liveness signal is the WSS heartbeat (or a missed heartbeat triggering the
+dispatcher reassignment path). This decision resolves H-11 in the
+production-readiness analysis.
 
 ## Auth
 

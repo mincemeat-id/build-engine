@@ -179,31 +179,31 @@ Effort estimates are calendar hours for one senior engineer with full context.
 > constant authoritative in exactly one place.
 > **Estimated total:** ~2 days.
 
-- [ ] **S · 1h** Pin `EngineConfig.image_manifest_version` default to the
+- [x] **S · 1h** Pin `EngineConfig.image_manifest_version` default to the
   *actual* shipped manifest version (`0.1.0-dev` until image GA) and add a
   `make contracts-sync` step that errors when the version drifts. **[H-1]**
-- [ ] **S · 1h** Trim `EngineConfig.images` default to the V1 GA matrix
+- [x] **S · 1h** Trim `EngineConfig.images` default to the V1 GA matrix
   (`node:22`, `bun:1`, `hugo:latest`, `zola:latest`) and update the README
   compatibility table. **[H-2]**
-- [ ] **S · 1h** Remove `proto_version` from `EngineConfig` — single-source
+- [x] **S · 1h** Remove `proto_version` from `EngineConfig` — single-source
   it from `agent.protocol.PROTOCOL_VERSION` and delete `_check_version` or
   rewrite it to check the **manifest** instead. **[M-3]**
-- [ ] **S · 2h** Add `FRAMEWORK_PROFILES` entries for `zola`,
+- [x] **S · 2h** Add `FRAMEWORK_PROFILES` entries for `zola`,
   `angular-static`, `remix-spa` (or mark explicitly "candidate, not GA in
   v1") and reconcile with the design's matrix. **[M-8]**
-- [ ] **S · 2h** Verify every contract subset in
+- [x] **S · 2h** Verify every contract subset in
   `contracts/openapi/build-engine.openapi.json` corresponds to an actually
   reachable coreapp route — `BuildEngineCacheResetResponse` is exported but
   the engine never POSTs cache-reset to coreapp; flag for removal in
   `sync_contracts.py`'s allow-list. **[design hygiene]**
-- [ ] **M · 4h** Add `tests/test_contracts.py` cases that assert:
+- [x] **M · 4h** Add `tests/test_contracts.py` cases that assert:
   - the local `EngineConfig.image_manifest_version` matches
     `contracts/image-manifest/manifest.schema.json` `$id` version;
   - every framework in `FRAMEWORK_PROFILES` appears in at least one image
     in the build-engine-images manifest;
   - every coreapp route the engine actually calls is present in the OpenAPI
     subset.
-- [ ] **S · 1h** Decide on `/api/v1/build-engines/agent/heartbeats` HTTP
+- [x] **S · 1h** Decide on `/api/v1/build-engines/agent/heartbeats` HTTP
   fallback (use, deprecate, or remove). Capture decision in
   `docs/coreapp-design.md`. **[H-11]**
 

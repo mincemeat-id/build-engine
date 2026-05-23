@@ -91,8 +91,10 @@ def test_uplink_headers_include_auth_and_protocol(
     headers = uplink_headers(config, credentials)
 
     assert headers["Authorization"] == "Bearer session-token"
+    from build_engine.config import DEFAULT_IMAGE_MANIFEST_VERSION
+
     assert headers["X-Build-Engine-Proto"] == "1"
-    assert headers["X-Image-Manifest-Version"] == "1.0.0"
+    assert headers["X-Image-Manifest-Version"] == DEFAULT_IMAGE_MANIFEST_VERSION
 
 
 def test_backoff_policy_caps_delay() -> None:

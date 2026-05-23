@@ -195,25 +195,6 @@
         },
         "type": "object"
       },
-      "BuildEngineCacheResetResponse": {
-        "properties": {
-          "accepted": {
-            "type": "boolean"
-          },
-          "engine_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "engine_ids",
-          "accepted"
-        ],
-        "type": "object"
-      },
       "BuildEngineCapabilities": {
         "properties": {
           "arch": {

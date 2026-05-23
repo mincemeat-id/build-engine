@@ -1,6 +1,7 @@
 """Synchronize Stage 0 contract snapshots from the adjacent coreapp checkout."""
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 COREAPP = ROOT.parent / "coreapp"
 COREAPP_OPENAPI = COREAPP / "frontend" / "openapi.json"
 TARGET_OPENAPI = ROOT / "contracts" / "openapi" / "build-engine.openapi.json"
+BUILD_ENGINE_IMAGES_MANIFEST = ROOT.parent / "build-engine-images" / "manifest.json"
 
+# Schema names imported into the engine OpenAPI subset. Drop entries the
+# engine no longer references (e.g. cache-reset response — coreapp performs
+# the broadcast over WSS; the engine never POSTs to that route).
 BUILD_ENGINE_SCHEMA_NAMES = {
     "BuildArtifactUploadUrlRequest",
     "BuildArtifactUploadUrlResponse",
@@ -19,7 +24,6 @@ BUILD_ENGINE_SCHEMA_NAMES = {
     "BuildEngineAgentSessionRequest",
     "BuildEngineAgentSessionResponse",
     "BuildEngineCacheResetRequest",
-    "BuildEngineCacheResetResponse",
     "BuildEngineCapabilities",
     "BuildEngineCommandEnvelope",
     "BuildEngineCommandType",
@@ -85,7 +89,42 @@ def main() -> int:
         "components": {"schemas": components},
     }
     TARGET_OPENAPI.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+
+    _check_image_manifest_version_drift()
     return 0
+
+
+def _check_image_manifest_version_drift() -> None:
+    """Fail if EngineConfig.image_manifest_version drifts from the shipped manifest.
+
+    The adjacent ``build-engine-images`` checkout is the source of truth for
+    the manifest version. If the checkout is missing (e.g. CI), skip with a
+    notice — the assertion still runs locally before a release.
+    """
+
+    if not BUILD_ENGINE_IMAGES_MANIFEST.exists():
+        print(
+            f"sync_contracts: skipped manifest-version drift check "
+            f"(missing {BUILD_ENGINE_IMAGES_MANIFEST})",
+            file=sys.stderr,
+        )
+        return
+
+    sys.path.insert(0, str(ROOT / "src"))
+    try:
+        from build_engine.config import DEFAULT_IMAGE_MANIFEST_VERSION
+    finally:
+        sys.path.pop(0)
+
+    shipped = _load_json(BUILD_ENGINE_IMAGES_MANIFEST).get("version")
+    if shipped != DEFAULT_IMAGE_MANIFEST_VERSION:
+        raise SystemExit(
+            f"image-manifest version drift: EngineConfig default is "
+            f"{DEFAULT_IMAGE_MANIFEST_VERSION!r} but "
+            f"{BUILD_ENGINE_IMAGES_MANIFEST.name} ships {shipped!r}. "
+            f"Bump build_engine.config.DEFAULT_IMAGE_MANIFEST_VERSION "
+            f"in lockstep with the images manifest."
+        )
 
 
 def _load_json(path: Path) -> dict[str, Any]:
