@@ -25,7 +25,7 @@ concurrency:
 jobs:
   matrix:
     name: Resolve release matrix
-    runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
     outputs:
       targets: ${{ steps.set.outputs.targets }}

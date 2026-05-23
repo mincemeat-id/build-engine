@@ -10,7 +10,7 @@ jobs:
     # Pin to the sanctioned self-hosted pool: Ubuntu 24.04 LTS / amd64 with
     # Docker-in-Docker, nftables, and the production PyInstaller baseline.
     # See docs/build-engine-operations.md § CI Infrastructure.
-    runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
     strategy:
       fail-fast: false
