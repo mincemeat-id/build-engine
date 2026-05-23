@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import pwd
 import stat
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -21,6 +23,11 @@ from build_engine.config import (
 
 class AuthError(RuntimeError):
     """Raised when registration or credentials fail."""
+
+
+SERVICE_USER = "build-engine"
+SERVICE_GROUP = "build-engine"
+MIN_ENGINE_SECRET_BYTES = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,11 +185,22 @@ def refresh_session(
     return refreshed
 
 
-def validate_credentials_file(credentials_path: Path) -> EngineCredentials:
+def validate_credentials_file(
+    credentials_path: Path,
+    *,
+    service_user: str | None = None,
+    service_group: str | None = None,
+) -> EngineCredentials:
     """Validate credential content and file permissions."""
 
     credentials = load_credentials(credentials_path)
     validate_secret_file_permissions(credentials_path)
+    validate_secret_file_ownership(
+        credentials_path,
+        service_user=service_user,
+        service_group=service_group,
+    )
+    validate_engine_secret(credentials.engine_secret)
     parse_datetime(credentials.session_jwt_expires_at)
     return credentials
 
@@ -193,6 +211,36 @@ def validate_secret_file_permissions(path: Path) -> None:
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
         raise AuthError(f"Secret file permissions are too open: {path}")
+
+
+def validate_secret_file_ownership(
+    path: Path,
+    *,
+    service_user: str | None = None,
+    service_group: str | None = None,
+) -> None:
+    """Reject credentials not owned by the expected service identity."""
+
+    stat_result = path.stat()
+    expected_uid = _expected_uid(service_user)
+    expected_gid = _expected_gid(service_group)
+    if stat_result.st_uid != expected_uid or stat_result.st_gid != expected_gid:
+        raise AuthError(
+            "Secret file ownership is invalid: "
+            f"{path} uid={stat_result.st_uid} gid={stat_result.st_gid}; "
+            f"expected uid={expected_uid} gid={expected_gid}"
+        )
+
+
+def validate_engine_secret(value: str) -> None:
+    """Validate the persisted engine secret shape before use."""
+
+    try:
+        encoded = value.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise AuthError("engine_secret must contain only ASCII characters") from exc
+    if len(encoded) < MIN_ENGINE_SECRET_BYTES:
+        raise AuthError(f"engine_secret must be at least {MIN_ENGINE_SECRET_BYTES} bytes")
 
 
 def parse_datetime(value: str) -> datetime:
@@ -209,6 +257,26 @@ def aware_utcnow() -> datetime:
     """Return timezone-aware UTC now."""
 
     return datetime.now(UTC)
+
+
+def _expected_uid(service_user: str | None) -> int:
+    if service_user is None:
+        return os.geteuid()
+    try:
+        return pwd.getpwnam(service_user).pw_uid
+    except KeyError:
+        return os.geteuid()
+
+
+def _expected_gid(service_group: str | None) -> int:
+    if service_group is None:
+        return os.getegid()
+    import grp
+
+    try:
+        return grp.getgrnam(service_group).gr_gid
+    except KeyError:
+        return os.getegid()
 
 
 def _credentials_from_registration_response(

@@ -63,6 +63,7 @@ class EngineConfig:
     image_manifest_version: str = DEFAULT_IMAGE_MANIFEST_VERSION
     images: tuple[str, ...] = DEFAULT_IMAGES
     network_blocklist: tuple[str, ...] = ()
+    network_guard_enabled: bool = True
     os: str = field(default_factory=lambda: platform.system().lower())
     arch: str = field(default_factory=lambda: _normalize_arch(platform.machine()))
 
@@ -195,6 +196,8 @@ def _coerce_config_values(values: dict[str, Any]) -> dict[str, Any]:
         coerced["network_blocklist"] = tuple(str(item) for item in coerced["network_blocklist"])
     elif isinstance(coerced.get("network_blocklist"), str):
         coerced["network_blocklist"] = _split_csv(str(coerced["network_blocklist"]))
+    if isinstance(coerced.get("network_guard_enabled"), str):
+        coerced["network_guard_enabled"] = _bool_value(str(coerced["network_guard_enabled"]))
     return coerced
 
 
@@ -227,6 +230,8 @@ def _coerce_env_value(key: str, value: str) -> object:
         return int(value)
     if key == "container_cpus":
         return float(value)
+    if key == "network_guard_enabled":
+        return _bool_value(value)
     if key in {"images", "network_blocklist"}:
         return _split_csv(value)
     if key.endswith("_path") or key.endswith("_dir"):
@@ -246,6 +251,15 @@ def _toml_string(value: str) -> str:
 
 def _split_csv(value: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
+def _bool_value(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean value: {value}")
 
 
 def _normalize_arch(machine: str) -> str:

@@ -5,7 +5,7 @@
 > routes), `~/work/Mincemeat/build-engine-images` (Dockerfiles, manifest
 > contract, CI patterns), and the locally tracked design / contract docs.
 > **Author:** Pre-launch hardening review.
-> **Last Updated:** 2026-05-22.
+> **Last Updated:** 2026-05-23.
 
 This document captures every issue that should be addressed before the
 build-engine is exposed to first production traffic, plus an automated
@@ -346,27 +346,27 @@ Effort estimates are calendar hours for one senior engineer with full context.
 > modes.
 > **Estimated total:** ~2 days.
 
-- [ ] **S · 2h** Validate `credentials.toml` ownership (uid/gid) — currently
+- [x] **S · 2h** Validate `credentials.toml` ownership (uid/gid) — currently
   only mode is validated. Reject if owner ≠ service user.
-- [ ] **S · 2h** Add structured (JSON) logging via stdlib `logging` +
+- [x] **S · 2h** Add structured (JSON) logging via stdlib `logging` +
   `RichHandler`/`JsonFormatter`. All `print(...)` calls in CLI / serve
   paths should funnel through it.
-- [ ] **S · 2h** Add `systemd-notify` (`Type=notify` already declared in
+- [x] **S · 2h** Add `systemd-notify` (`Type=notify` already declared in
   AGENTS.md, but service file uses `Type=simple`). Either implement
   `sd_notify` or change the unit to `Type=simple` consistently. The
   service file at `packaging/systemd/build-engine.service` currently does
   the latter — confirm and document.
-- [ ] **S · 2h** Add startup self-test that runs the equivalent of
+- [x] **S · 2h** Add startup self-test that runs the equivalent of
   `doctor --json --skip=image_pull,wss_handshake` before opening the WSS
   uplink; refuse to start on `fail`.
-- [ ] **M · 4h** Implement graceful drain: on `SIGTERM`, set
+- [x] **M · 4h** Implement graceful drain: on `SIGTERM`, set
   `SQLiteCommandHandlers.draining=True`, finish running attempts, close
   uplink with code `1001` and reason `engine_drain`.
-- [ ] **S · 2h** Add `--state-dir` and `--no-network-guard` flags to
+- [x] **S · 2h** Add `--state-dir` and `--no-network-guard` flags to
   `serve` so operators can run a confined dev engine without sudo.
-- [ ] **S · 2h** Validate `engine_secret` length / charset in
+- [x] **S · 2h** Validate `engine_secret` length / charset in
   `validate_credentials_file` (length ≥ 32 bytes, ASCII).
-- [ ] **S · 2h** Add Prometheus-compatible textfile metrics writer under
+- [x] **S · 2h** Add Prometheus-compatible textfile metrics writer under
   `/var/lib/build-engine/metrics.prom` for node-exporter scraping.
 
 ---

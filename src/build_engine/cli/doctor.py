@@ -20,6 +20,8 @@ import websockets
 
 from build_engine import __version__
 from build_engine.agent.auth import (
+    SERVICE_GROUP,
+    SERVICE_USER,
     AuthError,
     client_headers_for_credentials,
     validate_credentials_file,
@@ -92,14 +94,22 @@ def run_doctor(
     timeout_seconds: float = 15.0,
     image_pull_timeout_seconds: float = 60.0,
     clock: Clock | None = None,
+    skip_checks: tuple[str, ...] = (),
+    credential_service_user: str | None = SERVICE_USER,
+    credential_service_group: str | None = SERVICE_GROUP,
 ) -> DoctorReport:
     """Run host, credential, backend, executor, and queue diagnostics."""
 
     checks: list[DoctorCheck] = [_check_version()]
     credentials: EngineCredentials | None = None
+    skipped = set(skip_checks)
 
     try:
-        credentials = validate_credentials_file(config.credentials_path)
+        credentials = validate_credentials_file(
+            config.credentials_path,
+            service_user=credential_service_user,
+            service_group=credential_service_group,
+        )
     except (AuthError, ValueError, FileNotFoundError, OSError) as exc:
         checks.append(_fail("credentials", str(exc)))
     else:
@@ -118,22 +128,46 @@ def run_doctor(
             _check_disk_space(config),
             _check_writable_paths(config),
             _check_sqlite_integrity(config.state_dir / "queue.sqlite"),
-            _check_network_guard(config, timeout_seconds=timeout_seconds),
+            _skip("network_guard", "disabled by configuration")
+            if not config.network_guard_enabled
+            else _maybe_skip(
+                "network_guard",
+                skipped,
+                lambda: _check_network_guard(config, timeout_seconds=timeout_seconds),
+            ),
         )
     )
 
     checks.append(
-        _check_agent_health(
-            config,
-            credentials=credentials,
-            timeout_seconds=timeout_seconds,
-            clock=clock or (lambda: datetime.now(UTC)),
+        _maybe_skip(
+            "agent_health",
+            skipped,
+            lambda: _check_agent_health(
+                config,
+                credentials=credentials,
+                timeout_seconds=timeout_seconds,
+                clock=clock or (lambda: datetime.now(UTC)),
+            ),
         )
     )
     checks.append(
-        _check_wss_handshake(config, credentials=credentials, timeout_seconds=timeout_seconds)
+        _maybe_skip(
+            "wss_handshake",
+            skipped,
+            lambda: _check_wss_handshake(
+                config,
+                credentials=credentials,
+                timeout_seconds=timeout_seconds,
+            ),
+        )
     )
-    checks.append(_check_image_pull(config, timeout_seconds=image_pull_timeout_seconds))
+    checks.append(
+        _maybe_skip(
+            "image_pull",
+            skipped,
+            lambda: _check_image_pull(config, timeout_seconds=image_pull_timeout_seconds),
+        )
+    )
 
     status: Literal["ok", "error"]
     status = "error" if any(check.status == "fail" for check in checks) else "ok"
@@ -143,6 +177,16 @@ def run_doctor(
         status=status,
         checks=tuple(checks),
     )
+
+
+def _maybe_skip(
+    name: str,
+    skipped: set[str],
+    check: Callable[[], DoctorCheck],
+) -> DoctorCheck:
+    if name in skipped:
+        return _skip(name, "skipped by operator request")
+    return check()
 
 
 def render_human(report: DoctorReport) -> str:

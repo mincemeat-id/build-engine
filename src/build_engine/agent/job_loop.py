@@ -25,7 +25,11 @@ from build_engine.executor.docker_runner import (
     resolve_image_reference,
     run_container,
 )
-from build_engine.executor.network import NetworkGuardError, ensure_network_guard
+from build_engine.executor.network import (
+    DockerNetworkGuard,
+    NetworkGuardError,
+    ensure_network_guard,
+)
 from build_engine.executor.workspace import (
     WorkspaceError,
     cleanup_workspace,
@@ -84,6 +88,7 @@ async def run_worker_pool(
     credentials: EngineCredentials,
     options: JobLoopOptions | None = None,
     metrics: MetricsCollector | None = None,
+    stop_event: asyncio.Event | None = None,
 ) -> None:
     """Run queue workers until cancelled."""
 
@@ -98,6 +103,7 @@ async def run_worker_pool(
                 owner=f"worker-{index}",
                 options=selected_options,
                 metrics=metrics,
+                stop_event=stop_event,
             )
         )
         for index in range(config.max_concurrency)
@@ -114,9 +120,12 @@ async def _worker(
     owner: str,
     options: JobLoopOptions,
     metrics: MetricsCollector | None = None,
+    stop_event: asyncio.Event | None = None,
     sleep: Sleep = asyncio.sleep,
 ) -> None:
     while True:
+        if stop_event is not None and stop_event.is_set():
+            return
         lease = acquire_queue_lease(
             store,
             owner=owner,
@@ -224,10 +233,15 @@ async def execute_job(
             "docker.image_pull_seconds",
             time.perf_counter() - image_pull_started_at,
         )
-        network_guard = await asyncio.to_thread(
-            ensure_network_guard,
-            blocklist=_network_blocklist(config, payload),
-        )
+        if config.network_guard_enabled:
+            network_guard = await asyncio.to_thread(
+                ensure_network_guard,
+                blocklist=_network_blocklist(config, payload),
+            )
+        else:
+            network_guard = DockerNetworkGuard(
+                name="none", bridge_name="", gateway="", blocklist=()
+            )
         cancel_event = asyncio.Event()
         cancel_monitor = asyncio.create_task(_monitor_cancel(store, job, cancel_event))
         command = _combined_command(plan.install_command, plan.build_command)

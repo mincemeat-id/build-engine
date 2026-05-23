@@ -487,9 +487,10 @@ Requires=docker.service
 After=docker.service network-online.target
 
 [Service]
-Type=notify
+Type=simple
 User=build-engine
-Group=docker
+Group=build-engine
+SupplementaryGroups=docker
 ExecStart=/usr/local/bin/build-engine serve --config /etc/mincemeat/build-engine/config.toml
 Restart=on-failure
 RestartSec=5s

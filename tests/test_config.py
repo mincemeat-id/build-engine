@@ -89,3 +89,12 @@ def test_network_blocklist_loads_from_file_env_and_overrides(tmp_path: Path) -> 
     assert from_file.network_blocklist == ("10.10.0.0/16",)
     assert from_env.network_blocklist == ("192.0.2.0/24", "198.51.100.7")
     assert from_override.network_blocklist == ("203.0.113.0/24",)
+
+
+def test_network_guard_enabled_accepts_env_boolean(tmp_path: Path) -> None:
+    config = load_config(
+        config_path=tmp_path / "missing.toml",
+        env={"BUILD_ENGINE_NETWORK_GUARD_ENABLED": "false"},
+    )
+
+    assert config.network_guard_enabled is False

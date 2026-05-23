@@ -17,7 +17,7 @@ from build_engine.executor.cache import (
     prune_cache,
 )
 from build_engine.metrics.collector import MetricsCollector
-from build_engine.metrics.reporter import MetricsReporter
+from build_engine.metrics.reporter import MetricsReporter, write_textfile_metrics
 
 
 def test_prepare_site_cache_reports_hit_and_invalidates_changed_lockfile(tmp_path: Path) -> None:
@@ -159,6 +159,22 @@ def test_metrics_reporter_posts_openapi_rollup(tmp_path: Path) -> None:
     assert server.body["queue_depth"] == 1
     assert server.body["cache_size_bytes"] == 123
     assert server.auth_header == "Bearer session-token"
+
+
+def test_textfile_metrics_writer_outputs_prometheus_format(tmp_path: Path) -> None:
+    collector = MetricsCollector(workers_total=2)
+    collector.job_started()
+    collector.cache_event("HIT")
+    snapshot = collector.snapshot(queue_depth=4, cache_size_bytes=512)
+
+    metrics_path = tmp_path / "metrics.prom"
+    write_textfile_metrics(metrics_path, snapshot)
+
+    content = metrics_path.read_text(encoding="utf-8")
+    assert "# TYPE build_engine_workers_busy gauge" in content
+    assert "build_engine_workers_busy 1" in content
+    assert "build_engine_queue_depth 4" in content
+    assert "build_engine_cache_size_bytes 512" in content
 
 
 class _MetricsServer:

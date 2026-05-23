@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from urllib import error, request
 
 from build_engine.agent.auth import client_headers_for_credentials
@@ -87,6 +88,7 @@ async def run_metrics_reporter(
             queue_depth=store.queue_depth(),
             cache_size_bytes=cache_size_bytes(config.state_dir),
         )
+        write_textfile_metrics(config.state_dir / "metrics.prom", snapshot)
         try:
             await asyncio.to_thread(reporter.report, snapshot)
         except MetricsReportError as exc:
@@ -95,3 +97,41 @@ async def run_metrics_reporter(
                 LOG.warning("metrics report failed; will retry", exc_info=exc)
                 last_warning_at = now
         await sleep(config.heartbeat_interval_seconds)
+
+
+def write_textfile_metrics(path: Path, snapshot: MetricsSnapshot) -> None:
+    """Write a Prometheus textfile collector snapshot atomically."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# HELP build_engine_workers_busy Build engine workers currently busy.",
+        "# TYPE build_engine_workers_busy gauge",
+        f"build_engine_workers_busy {snapshot.workers_busy}",
+        "# HELP build_engine_workers_total Build engine configured worker count.",
+        "# TYPE build_engine_workers_total gauge",
+        f"build_engine_workers_total {snapshot.workers_total}",
+        "# HELP build_engine_queue_depth Local queued build attempts.",
+        "# TYPE build_engine_queue_depth gauge",
+        f"build_engine_queue_depth {snapshot.queue_depth}",
+        "# HELP build_engine_cache_size_bytes Build cache size in bytes.",
+        "# TYPE build_engine_cache_size_bytes gauge",
+        f"build_engine_cache_size_bytes {snapshot.cache_size_bytes}",
+        "# HELP build_engine_cache_hit_ratio Build cache hit ratio since process start.",
+        "# TYPE build_engine_cache_hit_ratio gauge",
+        f"build_engine_cache_hit_ratio {snapshot.cache_hit_ratio}",
+        "# HELP build_engine_jobs_running Local build attempts currently running.",
+        "# TYPE build_engine_jobs_running gauge",
+        f"build_engine_jobs_running {snapshot.jobs_running}",
+        "# HELP build_engine_jobs_completed_total Completed local build attempts.",
+        "# TYPE build_engine_jobs_completed_total counter",
+        f"build_engine_jobs_completed_total {snapshot.jobs_completed_total}",
+        "# HELP build_engine_docker_errors_total Docker infrastructure errors.",
+        "# TYPE build_engine_docker_errors_total counter",
+        f"build_engine_docker_errors_total {snapshot.docker_errors_total}",
+        "# HELP build_engine_uplink_reconnects_total WSS reconnect attempts.",
+        "# TYPE build_engine_uplink_reconnects_total counter",
+        f"build_engine_uplink_reconnects_total {snapshot.uplink_reconnects_total}",
+    ]
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    temporary.replace(path)

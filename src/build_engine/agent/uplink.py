@@ -152,12 +152,12 @@ class BuildEngineUplink:
             else:
                 failures = 0
 
-    async def stop(self) -> None:
+    async def stop(self, *, code: int = 1000, reason: str = "engine shutdown") -> None:
         """Request shutdown and close the current websocket if connected."""
 
         self._stop.set()
         if self._ws is not None:
-            await self._ws.close(code=1000, reason="engine shutdown")
+            await self._ws.close(code=code, reason=reason)
 
     async def connect_once(self) -> None:
         """Open one websocket connection and run it until closed."""

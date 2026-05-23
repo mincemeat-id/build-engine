@@ -47,6 +47,12 @@ sudo systemctl enable --now build-engine
 sudo build-engine doctor
 ```
 
+The packaged unit intentionally uses `Type=simple`; readiness is enforced by
+the agent's startup self-test before it opens the WSS uplink. The service runs
+as `build-engine:build-engine` and receives Docker access through the
+supplementary `docker` group. `credentials.toml` must be mode `0600`, owned by
+that service uid/gid, and contain an ASCII `engine_secret` of at least 32 bytes.
+
 ## Upgrade
 
 The v1 engine does not self-update. Drain the engine in coreapp when possible,
@@ -96,6 +102,37 @@ sudo build-engine doctor --json | jq .
 and protocol version, Docker, cgroup v2, disk space, writable workspace/cache
 paths, credentials, agent health, WSS welcome negotiation, image pull, SQLite
 integrity, clock skew, and network guard setup.
+
+`build-engine serve` runs the same startup diagnostics before connecting to
+coreapp, skipping only `image_pull` and `wss_handshake` to avoid a slow pull and
+because the serve path itself opens the persistent WSS connection. Operators can
+run a confined local development engine with:
+
+```bash
+build-engine serve --state-dir ./state --no-network-guard
+```
+
+This uses Docker `--network none` for build containers and avoids installing the
+iptables network-guard chain. When both flags are present, credentials are
+validated against the current uid/gid instead of the packaged service account.
+
+## Metrics Textfile
+
+The agent writes Prometheus-compatible textfile metrics to
+`/var/lib/build-engine/metrics.prom` on every metrics interval and again during
+graceful shutdown. Point node-exporter at `/var/lib/build-engine` with
+`--collector.textfile.directory=/var/lib/build-engine` to scrape local gauges
+and counters such as `build_engine_workers_busy`,
+`build_engine_queue_depth`, `build_engine_cache_size_bytes`, and
+`build_engine_uplink_reconnects_total`.
+
+## Graceful Drain
+
+`SIGTERM` and `SIGINT` put the agent into local drain mode, persist
+`/var/lib/build-engine/drain.json`, stop accepting new assignments, close the
+WSS uplink with code `1001` / reason `engine_drain`, and wait up to
+`sigterm_grace_seconds` for running attempts to finish before cancelling local
+tasks.
 
 ## Troubleshooting
 

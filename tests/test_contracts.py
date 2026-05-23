@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -137,4 +137,4 @@ def test_openapi_subset_covers_every_engine_invoked_http_route() -> None:
 
 def _load_json(path: Path) -> dict[str, Any]:
     with path.open() as handle:
-        return json.load(handle)
+        return cast("dict[str, Any]", json.load(handle))
