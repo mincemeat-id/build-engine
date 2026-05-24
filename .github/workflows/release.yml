@@ -134,7 +134,8 @@ jobs:
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
           exit-code: "1"
-          skip-dirs: ".venv,build,dist"
+          scanners: vuln
+          skip-dirs: ".venv,build,dist,tests/fixtures"
 
       - name: Upload Trivy SARIF
         if: always() && hashFiles('trivy-results.sarif') != ''

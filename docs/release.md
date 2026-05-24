@@ -120,7 +120,9 @@ checks:
 
 - `bandit -r src/`
 - `pip-audit` against `uv.lock`
-- Trivy filesystem scan with `--severity HIGH,CRITICAL --exit-code 1`
+- Trivy filesystem vulnerability scan with `--severity HIGH,CRITICAL --exit-code 1`,
+  excluding generated outputs, the local virtualenv, and static-site fixture
+  dependency locks that are not shipped with the engine.
 - CycloneDX SBOM generation for the built binary and dependency graph
 - Dependency review on pull requests that change direct dependencies
 - `actionlint` for workflow changes
