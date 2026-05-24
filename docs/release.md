@@ -180,11 +180,12 @@ only files under `dist/build-engine-<version>-<arch>*` plus `SHA256SUMS`.
 That prevents host leftovers from entering the release bundle.
 
 The release job fixes `SOURCE_DATE_EPOCH=0`, `PYTHONHASHSEED=0`, `TZ=UTC`, and
-`LC_ALL=C.UTF-8`, then performs two clean PyInstaller builds and compares the
-`dist/build-engine` SHA256 before any artifact is signed. A mismatch fails the
-release before publication.
+`LC_ALL=C.UTF-8`, then performs two explicit clean PyInstaller builds and
+compares the `dist/build-engine` SHA256 before any artifact is signed. The
+second clean build is kept as the release binary. A mismatch fails the release
+before publication.
 
-This check was verified locally on 2026-05-23 against PyInstaller 6.20.0 and
+This check was verified locally on 2026-05-24 against PyInstaller 6.20.0 and
 Python 3.14.0. Without the fixed environment, the one-file executable differed
 between clean builds; with the fixed environment, both builds produced
-`1ec6f9c8ffb3cab429adaa61acc1af8d3c080a5201dae40d7bab33625322bf6b`.
+`5673873f8ca537b57297c0a6c42400d6f2a650ace20c8d7aac8d175cc9733622`.
