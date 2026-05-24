@@ -1,15 +1,19 @@
 """Synchronize Stage 0 contract snapshots from the adjacent coreapp checkout."""
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 COREAPP = ROOT.parent / "coreapp"
 COREAPP_OPENAPI = COREAPP / "frontend" / "openapi.json"
 TARGET_OPENAPI = ROOT / "contracts" / "openapi" / "build-engine.openapi.json"
-BUILD_ENGINE_IMAGES_MANIFEST = ROOT.parent / "build-engine-images" / "manifest.json"
+BUILD_ENGINE_IMAGES_MANIFEST = ROOT / "manifest.json"
+BUILD_ENGINE_IMAGES_MANIFEST_URL_ENV = "BUILD_ENGINE_IMAGES_MANIFEST_URL"
 
 # Schema names imported into the engine OpenAPI subset. Drop entries the
 # engine no longer references (e.g. cache-reset response — coreapp performs
@@ -95,20 +99,7 @@ def main() -> int:
 
 
 def _check_image_manifest_version_drift() -> None:
-    """Fail if EngineConfig.image_manifest_version drifts from the shipped manifest.
-
-    The adjacent ``build-engine-images`` checkout is the source of truth for
-    the manifest version. If the checkout is missing (e.g. CI), skip with a
-    notice — the assertion still runs locally before a release.
-    """
-
-    if not BUILD_ENGINE_IMAGES_MANIFEST.exists():
-        print(
-            f"sync_contracts: skipped manifest-version drift check "
-            f"(missing {BUILD_ENGINE_IMAGES_MANIFEST})",
-            file=sys.stderr,
-        )
-        return
+    """Fail if EngineConfig.image_manifest_version drifts from the final manifest."""
 
     sys.path.insert(0, str(ROOT / "src"))
     try:
@@ -116,20 +107,47 @@ def _check_image_manifest_version_drift() -> None:
     finally:
         sys.path.pop(0)
 
-    shipped = _load_json(BUILD_ENGINE_IMAGES_MANIFEST).get("version")
+    manifest, manifest_source = _load_image_manifest()
+    shipped = manifest.get("version")
     if shipped != DEFAULT_IMAGE_MANIFEST_VERSION:
         raise SystemExit(
             f"image-manifest version drift: EngineConfig default is "
             f"{DEFAULT_IMAGE_MANIFEST_VERSION!r} but "
-            f"{BUILD_ENGINE_IMAGES_MANIFEST.name} ships {shipped!r}. "
+            f"{manifest_source} ships {shipped!r}. "
             f"Bump build_engine.config.DEFAULT_IMAGE_MANIFEST_VERSION "
             f"in lockstep with the images manifest."
         )
 
 
+def _load_image_manifest() -> tuple[dict[str, Any], str]:
+    location = os.environ.get(BUILD_ENGINE_IMAGES_MANIFEST_URL_ENV)
+    if location:
+        return _load_json_location(location), location
+    return _load_json(BUILD_ENGINE_IMAGES_MANIFEST), str(BUILD_ENGINE_IMAGES_MANIFEST)
+
+
+def _load_json_location(location: str) -> dict[str, Any]:
+    parsed = urlparse(location)
+    if parsed.scheme in {"http", "https"}:
+        with urlopen(location, timeout=30) as response:  # noqa: S310
+            decoded = json.loads(response.read().decode("utf-8"))
+    elif parsed.scheme == "file":
+        decoded = _load_json(Path(parsed.path))
+    elif parsed.scheme:
+        raise SystemExit(f"unsupported manifest URL scheme: {parsed.scheme}")
+    else:
+        decoded = _load_json(Path(location))
+    if not isinstance(decoded, dict):
+        raise SystemExit(f"manifest location did not return a JSON object: {location}")
+    return decoded
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     with path.open() as handle:
-        return json.load(handle)
+        decoded = json.load(handle)
+    if not isinstance(decoded, dict):
+        raise SystemExit(f"JSON file did not contain an object: {path}")
+    return decoded
 
 
 if __name__ == "__main__":

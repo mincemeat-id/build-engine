@@ -79,6 +79,9 @@ def test_release_workflow_publishes_signed_attested_artifacts() -> None:
     assert "build-engine-${version}-${RELEASE_ARCH}" in workflow
     assert "packaging/deb/build-deb.sh" in workflow
     assert "mincemeat-build-engine_*.deb" in workflow
+    assert "build-engine-images/releases/download/v1.0.0/manifest.json" in workflow
+    assert "DEFAULT_IMAGE_MANIFEST_VERSION" in workflow
+    assert "build-engine-images manifest version mismatch" in workflow
 
 
 def test_pyinstaller_spec_has_onefile_hidden_imports_and_debuggable_settings() -> None:

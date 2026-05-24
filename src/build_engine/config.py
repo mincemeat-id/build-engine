@@ -14,14 +14,13 @@ DEFAULT_CONFIG_PATH = Path("/etc/mincemeat/build-engine/config.toml")
 DEFAULT_CREDENTIALS_PATH = Path("/etc/mincemeat/build-engine/credentials.toml")
 DEFAULT_STATE_DIR = Path("/var/lib/build-engine")
 
-# Pinned to the build-engine-images shipped manifest version. Bumped only in
-# lockstep with `../build-engine-images/manifest.json`; drift is detected by
-# `scripts/sync_contracts.py` so registration never advertises an unreleased
-# manifest version.
-DEFAULT_IMAGE_MANIFEST_VERSION = "0.1.0-dev"
+# Pinned to the published build-engine-images manifest snapshot in the repo
+# root. Drift is detected by `scripts/sync_contracts.py` so registration never
+# advertises an unreleased or stale manifest version.
+DEFAULT_IMAGE_MANIFEST_VERSION = "1.0.0"
 
 # V1 GA builder-image matrix. Aligned with
-# `../build-engine-images/manifest.json` and the design's framework matrix.
+# `manifest.json` and the design's framework matrix.
 DEFAULT_IMAGES: tuple[str, ...] = ("node:22", "bun:1", "hugo:latest", "zola:latest")
 
 

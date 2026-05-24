@@ -1,5 +1,6 @@
 """Contract snapshot smoke tests."""
 
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -11,9 +12,10 @@ from build_engine.detect.framework import FRAMEWORK_PROFILES
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Sibling repo that ships the GA builder-image manifest. Optional in CI —
-# tests that depend on it skip rather than fail when the checkout is absent.
-BUILD_ENGINE_IMAGES_MANIFEST = ROOT.parent / "build-engine-images" / "manifest.json"
+# Published build-engine-images manifest snapshot. The v1.0.0 release asset was
+# compared against this file on 2026-05-24 and matched byte-for-byte.
+BUILD_ENGINE_IMAGES_MANIFEST = ROOT / "manifest.json"
+SYNC_CONTRACTS_SCRIPT = ROOT / "scripts" / "sync_contracts.py"
 
 # HTTP routes the engine actually invokes. Discovered by grepping the engine
 # source for `/api/v1/...` and locked here so OpenAPI subset drift is caught.
@@ -31,6 +33,24 @@ ENGINE_INVOKED_HTTP_ROUTES = {
 # check honest without forcing a rename that has its own follow-up.
 FRAMEWORK_ID_TO_MANIFEST_NAME = {
     "next-export": "nextjs-export",
+}
+
+EXPECTED_FINAL_IMAGE_FRAMEWORKS = {
+    "astro",
+    "vite",
+    "eleventy",
+    "docusaurus",
+    "vitepress",
+    "vuepress",
+    "gatsby",
+    "hugo",
+    "zola",
+    "nextjs-export",
+    "nuxt-generate",
+    "sveltekit-static",
+    "angular-static",
+    "remix-spa",
+    "generic",
 }
 
 
@@ -97,8 +117,6 @@ def test_image_manifest_schema_requires_digests() -> None:
 
 
 def test_default_image_manifest_version_matches_shipped_manifest() -> None:
-    if not BUILD_ENGINE_IMAGES_MANIFEST.exists():
-        pytest.skip(f"missing sibling checkout: {BUILD_ENGINE_IMAGES_MANIFEST}")
     shipped = _load_json(BUILD_ENGINE_IMAGES_MANIFEST).get("version")
     assert shipped == DEFAULT_IMAGE_MANIFEST_VERSION, (
         "EngineConfig.image_manifest_version drifted from the build-engine-images "
@@ -107,8 +125,6 @@ def test_default_image_manifest_version_matches_shipped_manifest() -> None:
 
 
 def test_every_framework_profile_appears_in_image_manifest() -> None:
-    if not BUILD_ENGINE_IMAGES_MANIFEST.exists():
-        pytest.skip(f"missing sibling checkout: {BUILD_ENGINE_IMAGES_MANIFEST}")
     manifest = _load_json(BUILD_ENGINE_IMAGES_MANIFEST)
     advertised: set[str] = set()
     for entry in manifest.get("images", {}).values():
@@ -126,6 +142,28 @@ def test_every_framework_profile_appears_in_image_manifest() -> None:
     )
 
 
+def test_final_image_manifest_advertises_public_release_framework_matrix() -> None:
+    manifest = _load_json(BUILD_ENGINE_IMAGES_MANIFEST)
+    advertised: set[str] = set()
+    for entry in manifest.get("images", {}).values():
+        advertised.update(entry.get("frameworks", ()))
+
+    assert advertised >= EXPECTED_FINAL_IMAGE_FRAMEWORKS
+
+
+def test_manifest_url_guard_rejects_version_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bad_manifest = tmp_path / "manifest.json"
+    bad_manifest.write_text(json.dumps({"version": "9.9.9"}) + "\n", encoding="utf-8")
+    monkeypatch.setenv("BUILD_ENGINE_IMAGES_MANIFEST_URL", str(bad_manifest))
+
+    sync_contracts = _load_sync_contracts_module()
+    with pytest.raises(SystemExit, match="image-manifest version drift"):
+        sync_contracts._check_image_manifest_version_drift()
+
+
 def test_openapi_subset_covers_every_engine_invoked_http_route() -> None:
     snapshot = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")
     paths = set(snapshot["paths"])
@@ -138,3 +176,12 @@ def test_openapi_subset_covers_every_engine_invoked_http_route() -> None:
 def _load_json(path: Path) -> dict[str, Any]:
     with path.open() as handle:
         return cast("dict[str, Any]", json.load(handle))
+
+
+def _load_sync_contracts_module() -> Any:
+    spec = importlib.util.spec_from_file_location("sync_contracts", SYNC_CONTRACTS_SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
