@@ -36,6 +36,7 @@ make hooks-install
 
 ```text
 build-engine/
+├── manifest.json            # Pinned published builder-image manifest snapshot
 ├── contracts/              # Imported contract snapshots
 │   ├── image-manifest/     # Builder image manifest JSON Schema
 │   ├── openapi/            # Control-plane build-engine OpenAPI subset
@@ -58,6 +59,10 @@ The repository carries locked contract surfaces:
   message-type names.
 - `contracts/image-manifest/manifest.schema.json` captures the builder image
   manifest contract from [`docs/images.md`](docs/images.md).
+- `manifest.json` is the pinned published builder-image manifest snapshot that
+  the engine advertises and release validation checks. Keep it at the repo root
+  so release tooling, tests, and operators have a stable, obvious source of
+  truth next to the package metadata.
 
 Refresh the OpenAPI snapshot after a control-plane contract regeneration:
 
@@ -122,6 +127,8 @@ script-marker ordering in `detect/framework.py`.
 - [Release](docs/release.md) — release pipeline, signing, attestations.
 - [Contributing](CONTRIBUTING.md) — verification gates, hooks, contract
   refreshes.
+- [Security](SECURITY.md) — supported versions and private vulnerability
+  reporting.
 
 ## Verification
 

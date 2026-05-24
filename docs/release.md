@@ -5,7 +5,7 @@
 
 The build-engine release pipeline publishes a standalone Linux amd64 binary and
 its verification material from GitHub Actions. Releases are cut from immutable
-`vX.Y.Z` tags after `main` has a green `make verify`.
+`vX.Y.Z` tags after the default branch has a green `make verify`.
 
 ## Inputs
 
@@ -21,7 +21,8 @@ Optional release inputs:
 - `GPG_SIGNING_KEY` for detached `.asc` signatures.
 - `ENABLE_ARM64=true` when the linux arm64 matrix entry is ready to publish.
 - `BUILD_ENGINE_IMAGES_MANIFEST_URL` when the release should align against a
-  manifest other than the default build-engine-images `master` manifest.
+  manifest other than the default immutable build-engine-images `v1.0.0`
+  release manifest.
 
 ## Trigger
 
@@ -87,10 +88,30 @@ developer path. The job:
 10. Generates SLSA provenance and SBOM attestations.
 11. Generates `SHA256SUMS` for the binary, Debian package, SBOM, signatures, certificates, and
     attestation bundles.
+12. Tags builder-image packages with `build-engine-X.Y.Z`, using the manifest
+    URL configured by `BUILD_ENGINE_IMAGES_MANIFEST_URL` or the default
+    immutable `build-engine-images v1.0.0` release manifest.
 
 The build must not depend on host-global state beyond Docker, iptables support,
 and the runner baseline documented in
 [`operations.md`](operations.md#ci-infrastructure).
+
+## Builder Image Alignment
+
+The repo-root `manifest.json` is the local pinned snapshot of the published
+builder-image manifest that the engine advertises in registration and session
+headers. Keep it at the repository root so release tooling can validate it
+without depending on a sibling checkout.
+
+For the `0.2.x` release line, the default release workflow aligns images using:
+
+```text
+https://github.com/mincemeat-id/build-engine-images/releases/download/v1.0.0/manifest.json
+```
+
+If `BUILD_ENGINE_IMAGES_MANIFEST_URL` is set, the workflow downloads that
+manifest and fails before tagging images if its `version` differs from
+`DEFAULT_IMAGE_MANIFEST_VERSION`.
 
 ## Security Gates
 

@@ -67,12 +67,14 @@ make verify
 
 The sync script extracts only the build-engine agent routes into
 `contracts/openapi/build-engine.openapi.json`. Protocol message names live in
-`contracts/protocol/wss-v1.json`, and the builder-image manifest schema lives
-in `contracts/image-manifest/manifest.schema.json`.
+`contracts/protocol/wss-v1.json`, the builder-image manifest schema lives in
+`contracts/image-manifest/manifest.schema.json`, and the pinned published
+builder-image manifest snapshot lives at repo-root `manifest.json`.
 
-When the builder-image manifest changes in the sibling `build-engine-images`
-repo, update the engine's accepted manifest version and run the contract tests
-with both checkouts present.
+When the builder-image manifest changes, update repo-root `manifest.json`,
+update the engine's accepted manifest version, and run the contract tests. If
+you are validating against a published manifest asset, set
+`BUILD_ENGINE_IMAGES_MANIFEST_URL` while running `make contracts-sync`.
 
 ## Release Process
 
@@ -92,6 +94,6 @@ so metadata bumps and release notes stay paired.
 
 ## Reporting Security Issues
 
-Do not file security issues in the public tracker. Email the maintainers at
-the address listed on the project page or report privately through GitHub's
-security advisories.
+Do not file security issues in the public tracker. Use GitHub private
+vulnerability reporting or the maintainer contact path in
+[`SECURITY.md`](SECURITY.md).

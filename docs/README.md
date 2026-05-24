@@ -25,6 +25,8 @@ staging storage, and reports metrics.
   release artifacts, and CI infrastructure.
 - [Contributor guide](../CONTRIBUTING.md) — verification gates, hooks,
   contract refreshes, release process, and agent-specific notes.
+- [Security policy](../SECURITY.md) — supported versions and private
+  vulnerability reporting.
 
 ## Key Design Decisions
 

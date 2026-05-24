@@ -27,7 +27,7 @@ sudo systemctl enable --now docker
 Install or upgrade the Debian package:
 
 ```bash
-sudo apt-get install -y ./mincemeat-build-engine_0.1.0_amd64.deb
+sudo apt-get install -y ./mincemeat-build-engine_0.2.0_amd64.deb
 ```
 
 Register the engine with a one-time token issued by the control plane
@@ -61,7 +61,7 @@ then replace the package:
 
 ```bash
 sudo systemctl stop build-engine
-sudo apt-get install -y ./mincemeat-build-engine_0.1.1_amd64.deb
+sudo apt-get install -y ./mincemeat-build-engine_0.2.1_amd64.deb
 sudo systemctl start build-engine
 sudo build-engine doctor
 ```
@@ -95,8 +95,8 @@ GPG_SIGN=1 bash scripts/release-artifacts.sh
 Release consumers should verify the binary before installing it:
 
 ```bash
-scripts/verify-release.sh v0.1.0
-sudo apt-get install -y ./mincemeat-build-engine_0.1.0_amd64.deb
+scripts/verify-release.sh v0.2.0
+sudo apt-get install -y ./mincemeat-build-engine_0.2.0_amd64.deb
 ```
 
 The helper downloads the GitHub Release assets with `gh`, checks
