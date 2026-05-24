@@ -7,6 +7,8 @@ and this project follows semantic versioning once v1 artifacts are published.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-24
+
 ### Added
 
 - AGPL-3.0-or-later `LICENSE` file at the repository root.
@@ -58,5 +60,6 @@ and this project follows semantic versioning once v1 artifacts are published.
   protocol handling, durable SQLite queue, Docker executor, cache handling,
   metrics collection, contract snapshots, and PyInstaller packaging smoke path.
 
-[Unreleased]: https://github.com/mincemeat-id/build-engine/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mincemeat-id/build-engine/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mincemeat-id/build-engine/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mincemeat-id/build-engine/releases/tag/v0.1.0
