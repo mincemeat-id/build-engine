@@ -57,6 +57,7 @@ def test_release_target_bumps_metadata_and_pushes_follow_tags() -> None:
     assert "pyproject.toml" in script
     assert "CHANGELOG.md" in script
     assert "uv lock" in script
+    assert 'git commit -m "chore(release): v${VERSION}"' in script
     assert 'git tag -a "v${VERSION}"' in script
     assert "git push --follow-tags" in script
 

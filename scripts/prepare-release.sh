@@ -56,16 +56,24 @@ changelog_text = changelog.read_text(encoding="utf-8")
 if re.search(rf"(?m)^## \[{re.escape(version)}\](?: - \d{{4}}-\d{{2}}-\d{{2}})?$", changelog_text):
     raise SystemExit(f"CHANGELOG.md already has a {version} section")
 
-today = dt.date.today().isoformat()
-release_section = (
-    f"## [{version}] - {today}\n\n"
-    "### Changed\n\n"
-    "- Release notes prepared for this version.\n\n"
+unreleased_match = re.search(
+    r"(?ms)^## \[Unreleased\]\n\n(?P<body>.*?)(?=^## \[)",
+    changelog_text,
 )
-changelog_text = changelog_text.replace(
-    "## [Unreleased]\n\n",
-    f"## [Unreleased]\n\n{release_section}",
-    1,
+if unreleased_match is None:
+    raise SystemExit("could not find [Unreleased] section in CHANGELOG.md")
+
+unreleased_body = unreleased_match.group("body").strip()
+if not unreleased_body:
+    raise SystemExit("CHANGELOG.md [Unreleased] section is empty")
+
+today = dt.date.today().isoformat()
+release_section = f"## [{version}] - {today}\n\n{unreleased_body}\n\n"
+changelog_text = (
+    changelog_text[: unreleased_match.start()]
+    + "## [Unreleased]\n\n"
+    + release_section
+    + changelog_text[unreleased_match.end() :]
 )
 
 unreleased_link = re.compile(
@@ -95,6 +103,6 @@ PY
 uv lock
 
 git add pyproject.toml uv.lock CHANGELOG.md
-git commit -m "Release v${VERSION}"
+git commit -m "chore(release): v${VERSION}"
 git tag -a "v${VERSION}" -m "Build Engine v${VERSION}"
 git push --follow-tags
