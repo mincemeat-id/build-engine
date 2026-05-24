@@ -1,0 +1,71 @@
+{
+  "$schema": "./schemas/manifest.schema.json",
+  "version": "1.0.0",
+  "generated_at": "2026-05-24T07:27:25.067953Z",
+  "images": {
+    "node:20": {
+      "tag": "ghcr.io/mincemeat-id/build-engine-images/node:20-1.0.0",
+      "digest": "sha256:1f6444e7aec019fc82df248a7a41ea43f2c89dd3aedb47412a8d3a265fd3ef86",
+      "frameworks": [
+        "astro",
+        "vite",
+        "eleventy",
+        "docusaurus",
+        "vitepress",
+        "vuepress",
+        "gatsby",
+        "nextjs-export",
+        "nuxt-generate",
+        "sveltekit-static",
+        "generic"
+      ]
+    },
+    "node:22": {
+      "tag": "ghcr.io/mincemeat-id/build-engine-images/node:22-1.0.0",
+      "digest": "sha256:c3563576cdfaa94d29a137aedf90e607971c82d22d01a34a5e4cae88730cfe42",
+      "frameworks": [
+        "astro",
+        "vite",
+        "eleventy",
+        "docusaurus",
+        "vitepress",
+        "vuepress",
+        "gatsby",
+        "nextjs-export",
+        "nuxt-generate",
+        "sveltekit-static",
+        "angular-static",
+        "remix-spa",
+        "generic"
+      ]
+    },
+    "bun:1": {
+      "tag": "ghcr.io/mincemeat-id/build-engine-images/bun:1-1.0.0",
+      "digest": "sha256:d52eb769eb0e7b713d7f08c9ae56e049a836ee450ab1f85136f96ccf44bd3e5a",
+      "frameworks": [
+        "astro",
+        "vite",
+        "generic"
+      ]
+    },
+    "hugo:latest": {
+      "tag": "ghcr.io/mincemeat-id/build-engine-images/hugo:1.0.0",
+      "digest": "sha256:550a2c39fee101bd38d850a39743788416c4e7499b9f62c94d1ef309b85703c6",
+      "frameworks": [
+        "hugo"
+      ]
+    },
+    "zola:latest": {
+      "tag": "ghcr.io/mincemeat-id/build-engine-images/zola:1.0.0",
+      "digest": "sha256:257de77b57f2115612d1f44d052d4f86c93aee87d8b8cd0f5c633c7e7ccdec2c",
+      "frameworks": [
+        "zola"
+      ]
+    }
+  },
+  "engine_compat": {
+    "proto_min": 1,
+    "proto_max": 1,
+    "engine_min": "1.0.0"
+  }
+}
