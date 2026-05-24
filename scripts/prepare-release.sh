@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -92,10 +93,22 @@ changelog_text = unreleased_link.sub(
     changelog_text,
     count=1,
 )
-release_link = (
-    f"[{version}]: https://github.com/mincemeat-id/build-engine/compare/"
-    f"v{previous}...v{version}\n"
+previous_tag_exists = (
+    subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"v{previous}"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode
+    == 0
 )
+if previous_tag_exists:
+    release_link = (
+        f"[{version}]: https://github.com/mincemeat-id/build-engine/compare/"
+        f"v{previous}...v{version}\n"
+    )
+else:
+    release_link = f"[{version}]: https://github.com/mincemeat-id/build-engine/releases/tag/v{version}\n"
 changelog_text = changelog_text.replace(f"[{previous}]:", f"{release_link}[{previous}]:", 1)
 changelog.write_text(changelog_text, encoding="utf-8")
 PY
