@@ -153,9 +153,7 @@ jobs:
             --output-file requirements-audit.txt
 
       - name: Audit Python dependencies
-        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
-        with:
-          inputs: requirements-audit.txt
+        run: uv run --with pip-audit==2.10.0 pip-audit -r requirements-audit.txt
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3

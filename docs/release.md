@@ -119,7 +119,8 @@ Release jobs run the same checks as CI plus release-specific supply-chain
 checks:
 
 - `bandit -r src/`
-- `pip-audit` against `uv.lock`
+- `pip-audit` against the exported locked Python requirements, run through
+  `uv` so the audit uses the same Python 3.14 toolchain as the release build.
 - Trivy filesystem vulnerability scan with `--severity HIGH,CRITICAL --exit-code 1`,
   excluding generated outputs, the local virtualenv, and static-site fixture
   dependency locks that are not shipped with the engine.
