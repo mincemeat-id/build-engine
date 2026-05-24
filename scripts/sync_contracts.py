@@ -68,34 +68,50 @@ BUILD_ENGINE_PATH_MARKERS = (
 def main() -> int:
     """Extract the build-engine-facing OpenAPI subset."""
 
-    if not COREAPP_OPENAPI.exists():
-        raise SystemExit(f"missing coreapp OpenAPI source: {COREAPP_OPENAPI}")
+    source = _load_coreapp_openapi_source()
+    if source is not None:
+        schemas = source["components"]["schemas"]
+        paths = {
+            path: value
+            for path, value in source["paths"].items()
+            if any(marker in path for marker in BUILD_ENGINE_PATH_MARKERS)
+        }
+        components = {
+            name: schemas[name] for name in sorted(BUILD_ENGINE_SCHEMA_NAMES) if name in schemas
+        }
 
-    source = _load_json(COREAPP_OPENAPI)
-    schemas = source["components"]["schemas"]
-    paths = {
-        path: value
-        for path, value in source["paths"].items()
-        if any(marker in path for marker in BUILD_ENGINE_PATH_MARKERS)
-    }
-    components = {
-        name: schemas[name] for name in sorted(BUILD_ENGINE_SCHEMA_NAMES) if name in schemas
-    }
-
-    snapshot = {
-        "openapi": source["openapi"],
-        "info": {
-            "title": "Mincemeat build-engine contract subset",
-            "version": source["info"]["version"],
-            "x-source": str(COREAPP_OPENAPI.relative_to(ROOT.parent)),
-        },
-        "paths": dict(sorted(paths.items())),
-        "components": {"schemas": components},
-    }
-    TARGET_OPENAPI.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+        snapshot = {
+            "openapi": source["openapi"],
+            "info": {
+                "title": "Mincemeat build-engine contract subset",
+                "version": source["info"]["version"],
+                "x-source": str(COREAPP_OPENAPI.relative_to(ROOT.parent)),
+            },
+            "paths": dict(sorted(paths.items())),
+            "components": {"schemas": components},
+        }
+        TARGET_OPENAPI.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
 
     _check_image_manifest_version_drift()
     return 0
+
+
+def _load_coreapp_openapi_source() -> dict[str, Any] | None:
+    """Load adjacent coreapp OpenAPI, or keep the pinned snapshot in standalone checkouts."""
+
+    if COREAPP_OPENAPI.exists():
+        return _load_json(COREAPP_OPENAPI)
+    if TARGET_OPENAPI.exists():
+        print(
+            f"coreapp OpenAPI source not found at {COREAPP_OPENAPI}; "
+            f"leaving pinned snapshot unchanged: {TARGET_OPENAPI}",
+            file=sys.stderr,
+        )
+        return None
+    raise SystemExit(
+        f"missing coreapp OpenAPI source: {COREAPP_OPENAPI}; "
+        f"pinned snapshot is also missing: {TARGET_OPENAPI}"
+    )
 
 
 def _check_image_manifest_version_drift() -> None:

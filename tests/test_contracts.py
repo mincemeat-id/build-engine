@@ -164,6 +164,21 @@ def test_manifest_url_guard_rejects_version_drift(
         sync_contracts._check_image_manifest_version_drift()
 
 
+def test_contract_sync_keeps_pinned_snapshot_without_adjacent_coreapp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync_contracts = _load_sync_contracts_module()
+    pinned_snapshot = tmp_path / "build-engine.openapi.json"
+    pinned_snapshot.write_text("{}\n", encoding="utf-8")
+
+    monkeypatch.setattr(sync_contracts, "COREAPP_OPENAPI", tmp_path / "missing-openapi.json")
+    monkeypatch.setattr(sync_contracts, "TARGET_OPENAPI", pinned_snapshot)
+
+    assert sync_contracts._load_coreapp_openapi_source() is None
+    assert pinned_snapshot.read_text(encoding="utf-8") == "{}\n"
+
+
 def test_openapi_subset_covers_every_engine_invoked_http_route() -> None:
     snapshot = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")
     paths = set(snapshot["paths"])
