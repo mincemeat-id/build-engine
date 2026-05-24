@@ -56,6 +56,9 @@ class DockerRunSpec:
     command: str
     config: EngineConfig
     network_guard: DockerNetworkGuard
+    source_root: Path | None = None
+    output_root: Path | None = None
+    build_manifest: Mapping[str, object] | None = None
     environment: Mapping[str, str] = field(default_factory=dict)
     cache_mounts: Sequence[CacheMount] = ()
     secret_env: Mapping[str, str] = field(default_factory=dict)
@@ -137,6 +140,7 @@ def docker_run_args(
     *,
     docker_bin: str = "docker",
     env_file_path: Path | None = None,
+    build_manifest_path: Path | None = None,
 ) -> list[str]:
     """Build the hardened `docker run` argv for a build command."""
 
@@ -164,10 +168,25 @@ def docker_run_args(
         tmpfs_mount,
         *spec.network_guard.docker_args(),
         "--workdir",
-        "/workspace",
-        "--volume",
-        f"{spec.project_root.resolve()}:/workspace:rw",
+        "/workspace/src" if spec.build_manifest is not None else "/workspace",
     ]
+    if spec.build_manifest is not None:
+        if build_manifest_path is None:
+            raise DockerError("build_manifest_path is required when build_manifest is set")
+        output_root = spec.output_root or spec.project_root.parent / "out"
+        output_root.mkdir(parents=True, exist_ok=True)
+        args.extend(
+            [
+                "--volume",
+                f"{build_manifest_path.resolve()}:/build/manifest.json:ro",
+                "--volume",
+                f"{(spec.source_root or spec.project_root).resolve()}:/workspace/src:rw",
+                "--volume",
+                f"{output_root.resolve()}:/workspace/out:rw",
+            ]
+        )
+    else:
+        args.extend(["--volume", f"{spec.project_root.resolve()}:/workspace:rw"])
     for mount in spec.cache_mounts:
         mount.host_path.mkdir(parents=True, exist_ok=True)
         args.extend(["--volume", f"{mount.host_path.resolve()}:{mount.container_path}:rw"])
@@ -175,7 +194,10 @@ def docker_run_args(
         args.extend(["--env", f"{key}={value}"])
     if env_file_path is not None:
         args.extend(["--env-file", str(env_file_path)])
-    args.extend([spec.image, "sh", "-c", spec.command])
+    if spec.build_manifest is not None:
+        args.append(spec.image)
+    else:
+        args.extend([spec.image, "sh", "-c", spec.command])
     return args
 
 
@@ -211,6 +233,26 @@ def _materialize_env_file(secret_env: Mapping[str, str]) -> Iterator[Path | None
             path.unlink()
 
 
+@contextlib.contextmanager
+def _materialize_build_manifest(
+    build_manifest: Mapping[str, object] | None,
+) -> Iterator[Path | None]:
+    if build_manifest is None:
+        yield None
+        return
+    fd, raw_path = tempfile.mkstemp(prefix="build-engine-manifest-", suffix=".json")
+    path = Path(raw_path)
+    try:
+        os.chmod(path, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(build_manifest, handle, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+        yield path
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+
+
 async def run_container(
     spec: DockerRunSpec,
     *,
@@ -220,9 +262,17 @@ async def run_container(
 ) -> ContainerResult:
     """Run a Docker container with timeout and SIGTERM->SIGKILL cancellation."""
 
-    with _materialize_env_file(spec.secret_env) as env_file_path:
+    with (
+        _materialize_env_file(spec.secret_env) as env_file_path,
+        _materialize_build_manifest(spec.build_manifest) as build_manifest_path,
+    ):
         process = await asyncio.create_subprocess_exec(
-            *docker_run_args(spec, docker_bin=docker_bin, env_file_path=env_file_path),
+            *docker_run_args(
+                spec,
+                docker_bin=docker_bin,
+                env_file_path=env_file_path,
+                build_manifest_path=build_manifest_path,
+            ),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

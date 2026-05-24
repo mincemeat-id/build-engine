@@ -54,7 +54,7 @@ def test_prepare_site_cache_reports_hit_and_invalidates_changed_lockfile(tmp_pat
     assert first.event == "MISS"
     assert second.event == "HIT"
     assert third.event == "WIPED"
-    assert not (tmp_path / "cache" / "site-a" / "npm" / "_cacache" / "entry").exists()
+    assert not (tmp_path / "cache" / "site-a" / "entry").exists()
 
 
 def test_cache_disable_reenable_wipes_before_reuse(tmp_path: Path) -> None:

@@ -6,10 +6,16 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from build_engine.config import EngineConfig, EngineCredentials
-from build_engine.detect.framework import DetectionError, infer_generic_output, plan_build
+from build_engine.detect.framework import (
+    BuildPlan,
+    DetectionError,
+    infer_generic_output,
+    plan_build,
+)
 from build_engine.executor.artifact import (
     ArtifactError,
     ArtifactUploadClient,
@@ -278,6 +284,13 @@ async def execute_job(
                 command=command,
                 config=config,
                 network_guard=network_guard,
+                source_root=workspace.source_root,
+                output_root=workspace.attempt_dir / "workspace" / "out",
+                build_manifest=_build_manifest(
+                    plan=plan,
+                    source_root=workspace.source_root,
+                    project_root=project_root,
+                ),
                 cache_mounts=cache.mounts,
                 secret_env=_secret_env(payload),
             ),
@@ -493,6 +506,37 @@ def _resolve_builder_image(image: str, payload: dict[str, Any]) -> str:
     if manifest_path is None:
         return image
     return resolve_image_reference(image, manifest=load_image_manifest(manifest_path))
+
+
+def _build_manifest(
+    *,
+    plan: BuildPlan,
+    source_root: Path,
+    project_root: Path,
+) -> dict[str, object]:
+    try:
+        root = project_root.relative_to(source_root).as_posix()
+    except ValueError:
+        root = "."
+    return {
+        "framework": _entrypoint_framework_id(str(plan.framework_id)),
+        "package_manager": plan.package_manager,
+        "root": root or ".",
+        "install_command": plan.install_command,
+        "build_command": plan.build_command,
+        "output_dir": plan.output_dir or "",
+        "env": {},
+    }
+
+
+def _entrypoint_framework_id(framework_id: str) -> str:
+    return {
+        "angular-static": "angular",
+        "next-export": "nextjs",
+        "nuxt-generate": "nuxt",
+        "remix-spa": "remix",
+        "sveltekit-static": "sveltekit",
+    }.get(framework_id, framework_id)
 
 
 def _secret_env(payload: dict[str, Any]) -> dict[str, str]:

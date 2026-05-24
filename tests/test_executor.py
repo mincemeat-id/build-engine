@@ -19,6 +19,7 @@ from build_engine.config import EngineConfig
 from build_engine.executor.artifact import ArtifactUploadClient, package_output
 from build_engine.executor.cache import reset_cache, site_cache
 from build_engine.executor.docker_runner import (
+    CacheMount,
     DockerError,
     DockerRunSpec,
     _format_env_file,
@@ -114,6 +115,37 @@ def test_docker_run_args_include_resource_and_hardening_flags(tmp_path: Path) ->
     assert args[-4:] == ["node:22", "sh", "-c", "npm ci && npm run build"]
     assert "-lc" not in args
     assert "/var/run/docker.sock" not in " ".join(args)
+
+
+def test_docker_run_args_mount_final_image_entrypoint_contract(tmp_path: Path) -> None:
+    source_root = tmp_path / "src"
+    output_root = tmp_path / "out"
+    manifest_path = tmp_path / "manifest.json"
+    spec = DockerRunSpec(
+        image="node:22@sha256:" + ("a" * 64),
+        project_root=source_root,
+        command="npm ci && npm run build",
+        config=EngineConfig(state_dir=tmp_path),
+        network_guard=DockerNetworkGuard(name="none"),
+        source_root=source_root,
+        output_root=output_root,
+        build_manifest={
+            "framework": "vite",
+            "package_manager": "npm",
+            "build_command": "npm ci && npm run build",
+            "output_dir": "dist",
+        },
+        cache_mounts=(CacheMount(host_path=tmp_path / "cache", container_path="/cache"),),
+    )
+
+    args = docker_run_args(spec, build_manifest_path=manifest_path)
+
+    assert f"{manifest_path.resolve()}:/build/manifest.json:ro" in args
+    assert f"{source_root.resolve()}:/workspace/src:rw" in args
+    assert f"{output_root.resolve()}:/workspace/out:rw" in args
+    assert f"{(tmp_path / 'cache').resolve()}:/cache:rw" in args
+    assert args[-1] == spec.image
+    assert "sh" not in args[-4:]
 
 
 def test_network_guard_creates_bridge_and_installs_drop_rules(
@@ -375,8 +407,8 @@ def test_site_cache_maps_package_manager_mounts_and_reset(tmp_path: Path) -> Non
 
     mounts = cache.mounts()
 
-    assert mounts[0].host_path == tmp_path / "cache" / "site-a" / "pnpm" / "store"
-    assert mounts[0].container_path == "/home/node/.local/share/pnpm/store"
+    assert mounts[0].host_path == tmp_path / "cache" / "site-a"
+    assert mounts[0].container_path == "/cache"
     assert mounts[0].host_path.exists()
 
     reset_cache(tmp_path, site_id="site-a")

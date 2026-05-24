@@ -44,19 +44,8 @@ class SiteCache:
         """Return Docker mounts for the package manager."""
 
         self.root.mkdir(parents=True, exist_ok=True)
-        match self.package_manager:
-            case "npm":
-                host = self.root / "npm" / "_cacache"
-                container = "/home/node/.npm/_cacache"
-            case "pnpm":
-                host = self.root / "pnpm" / "store"
-                container = "/home/node/.local/share/pnpm/store"
-            case "yarn":
-                host = self.root / "yarn" / "cache"
-                container = "/home/node/.cache/yarn"
-            case "bun":
-                host = self.root / "bun" / "install-cache"
-                container = "/home/node/.bun/install/cache"
+        host = self.root
+        container = "/cache"
         host.mkdir(parents=True, exist_ok=True)
         return (CacheMount(host_path=host, container_path=container),)
 
