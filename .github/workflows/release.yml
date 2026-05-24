@@ -379,7 +379,18 @@ jobs:
           jq -r '.images[] | [.tag, .digest] | @tsv' build-engine-images-manifest.json |
           while IFS=$'\t' read -r tag digest; do
             image="${tag%:*}"
+            source_tag="${tag##*:}"
+            if [ "$source_tag" = "$actual_manifest_version" ]; then
+              target_tag="$alignment_tag"
+            else
+              track="${source_tag%-${actual_manifest_version}}"
+              if [ "$track" = "$source_tag" ]; then
+                echo "::error::cannot derive track from manifest tag $tag"
+                exit 1
+              fi
+              target_tag="${track}-${alignment_tag}"
+            fi
             docker buildx imagetools create \
-              -t "${image}:${alignment_tag}" \
+              -t "${image}:${target_tag}" \
               "${image}@${digest}"
           done
