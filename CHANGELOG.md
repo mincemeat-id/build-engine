@@ -15,6 +15,13 @@ and this project follows semantic versioning once v1 artifacts are published.
 - Changelog/version drift guardrail in the test suite.
 - Public-facing protocol reference at `docs/protocol.md` documenting the WSS
   envelope, HTTP endpoints, and build-secret contract the agent consumes.
+- Public `SECURITY.md` policy with supported-version guidance and private
+  vulnerability reporting instructions.
+- Debian package build support, PyInstaller release artifacts, SHA256 manifests,
+  Sigstore signing, SLSA provenance, CycloneDX SBOMs, and release-bundle
+  verification tooling.
+- Final `build-engine-images` `v1.0.0` manifest snapshot and integration tests
+  that exercise digest-pinned Node, Bun, Hugo, and Zola builder images.
 
 ### Changed
 
@@ -26,6 +33,22 @@ and this project follows semantic versioning once v1 artifacts are published.
 - CI workflows now run on GitHub-hosted `ubuntu-24.04` runners instead of a
   self-hosted pool. Release matrix uses `ubuntu-24.04-arm` when `ENABLE_ARM64`
   is set.
+- Engine metadata now advertises builder image manifest `1.0.0`, and release
+  alignment defaults to the immutable `build-engine-images v1.0.0` release
+  manifest.
+- Release dependency auditing now runs through `uv` with the project Python
+  3.14 environment.
+- Release vulnerability scanning is scoped to project dependencies and skips
+  fixture lockfiles, virtual environments, and generated build output.
+
+### Fixed
+
+- Contract synchronization now works in standalone release checkouts by using
+  the pinned OpenAPI snapshot when the adjacent `coreapp` checkout is absent.
+- Release reproducibility verification now compares two explicit clean
+  PyInstaller builds.
+- Release verification now downloads and validates the Debian package, SBOM
+  attestation, and workflow-dispatch draft provenance bundle.
 
 ## [0.1.0] - 2026-05-23
 
