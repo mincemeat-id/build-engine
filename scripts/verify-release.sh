@@ -59,6 +59,7 @@ if [[ -z "$WORK_DIR" ]]; then
   gh release download "$TAG" \
     --repo "$REPO" \
     --pattern 'build-engine-*' \
+    --pattern 'mincemeat-build-engine_*.deb' \
     --pattern 'SHA256SUMS' \
     --dir "$WORK_DIR"
 fi
@@ -73,8 +74,16 @@ if [[ -z "$binary" ]]; then
   exit 1
 fi
 
+deb="$(find . -maxdepth 1 -type f -name "mincemeat-build-engine_*_*.deb" \
+  -printf '%f\n' | sort | head -n 1)"
+if [[ -z "$deb" ]]; then
+  echo "Debian package not found in $WORK_DIR" >&2
+  exit 1
+fi
+
 required=(
   "SHA256SUMS"
+  "${deb}"
   "${binary}.sig"
   "${binary}.pem"
   "${binary}.cdx.json"
@@ -100,7 +109,23 @@ cosign verify-blob \
 slsa-verifier verify-artifact "$binary" \
   --provenance-path "${binary}.provenance.intoto.jsonl" \
   --source-uri "github.com/${REPO}" \
-  --source-tag "$TAG"
+  --source-tag "$TAG" \
+  --builder-id "https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/${TAG}" || {
+    echo "slsa-verifier could not verify this provenance bundle; falling back to cosign bundle verification" >&2
+    cosign verify-blob-attestation \
+      --bundle "${binary}.provenance.intoto.jsonl" \
+      --certificate-identity-regexp "^https://github.com/${REPO}/" \
+      --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+      --type slsaprovenance1 \
+      "$binary"
+  }
+
+cosign verify-blob-attestation \
+  --bundle "${binary}.sbom.intoto.jsonl" \
+  --certificate-identity-regexp "^https://github.com/${REPO}/" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --type cyclonedx \
+  "$binary"
 
 jq -e '.bomFormat == "CycloneDX"' "${binary}.cdx.json" >/dev/null
 
