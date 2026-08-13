@@ -38,6 +38,10 @@ class MetricsSnapshot:
             queue_depth=self.queue_depth,
             cache_size_bytes=self.cache_size_bytes,
             disk_free_bytes=disk_free_bytes,
+            jobs_running=self.jobs_running,
+            jobs_completed_total=self.jobs_completed_total,
+            docker_errors_total=self.docker_errors_total,
+            uplink_reconnects_total=self.uplink_reconnects_total,
         )
 
 

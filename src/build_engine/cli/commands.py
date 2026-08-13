@@ -27,7 +27,7 @@ from build_engine.cli.logging import configure_logging
 from build_engine.config import DEFAULTS, EngineConfig, EngineCredentials, load_config
 from build_engine.executor.cache import cache_size_bytes, reset_cache
 from build_engine.metrics.collector import MetricsCollector
-from build_engine.metrics.reporter import run_metrics_reporter, write_textfile_metrics
+from build_engine.metrics.reporter import write_textfile_metrics
 from build_engine.queue.handlers import SQLiteCommandHandlers
 from build_engine.queue.store import SQLiteEventOutbox, SQLiteQueueStore
 
@@ -61,17 +61,6 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--config", default="/etc/mincemeat/build-engine/config.toml")
     serve.add_argument("--credentials", default=None)
     serve.add_argument("--state-dir", default=None, help="override runtime state directory")
-    serve.add_argument(
-        "--network-blocklist",
-        action="append",
-        default=None,
-        help="comma-separated CIDR/IP deny-list entries to add to the build network guard",
-    )
-    serve.add_argument(
-        "--no-network-guard",
-        action="store_true",
-        help="run containers with Docker --network none instead of the guarded bridge",
-    )
     serve.set_defaults(handler=_serve)
 
     register = subparsers.add_parser("register", help="register this engine with coreapp")
@@ -91,12 +80,6 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="run local diagnostics")
     doctor.add_argument("--config", default="/etc/mincemeat/build-engine/config.toml")
     doctor.add_argument("--credentials", default=None)
-    doctor.add_argument(
-        "--network-blocklist",
-        action="append",
-        default=None,
-        help="comma-separated CIDR/IP deny-list entries to add to the network guard check",
-    )
     doctor.add_argument(
         "--skip",
         action="append",
@@ -130,6 +113,11 @@ def _build_parser() -> argparse.ArgumentParser:
     drain.add_argument("--credentials", default=None)
     drain.set_defaults(handler=_drain)
 
+    resume = subparsers.add_parser("resume", help="resume accepting assignments")
+    resume.add_argument("--config", default="/etc/mincemeat/build-engine/config.toml")
+    resume.add_argument("--credentials", default=None)
+    resume.set_defaults(handler=_resume)
+
     parser.set_defaults(handler=_help)
     return parser
 
@@ -141,17 +129,15 @@ def _help(args: argparse.Namespace) -> int:
 
 
 def _serve(args: argparse.Namespace) -> int:
-    overrides = _network_blocklist_override(args.network_blocklist)
+    overrides: dict[str, object | None] = {}
     if args.state_dir is not None:
         overrides["state_dir"] = args.state_dir
-    if args.no_network_guard:
-        overrides["network_guard_enabled"] = False
     config = load_config(
         config_path=args.config,
         credentials_path=args.credentials,
         overrides=overrides,
     )
-    dev_identity = bool(args.no_network_guard and args.state_dir is not None)
+    dev_identity = args.state_dir is not None
     try:
         credentials = validate_credentials_file(
             config.credentials_path,
@@ -192,6 +178,8 @@ def _serve(args: argparse.Namespace) -> int:
         asyncio.run(_run_service(config, credentials, store, heartbeat_snapshot, metrics))
     except KeyboardInterrupt:
         LOG.info("build-engine serve: stopped")
+    finally:
+        store.close()
     return 0
 
 
@@ -239,7 +227,6 @@ def _doctor(args: argparse.Namespace) -> int:
     config = load_config(
         config_path=args.config,
         credentials_path=args.credentials,
-        overrides=_network_blocklist_override(args.network_blocklist),
     )
     report = run_doctor(config, skip_checks=_skip_checks(args.skip))
     if args.as_json:
@@ -260,8 +247,22 @@ def _cache_reset(args: argparse.Namespace) -> int:
 def _drain(args: argparse.Namespace) -> int:
     config = load_config(config_path=args.config, credentials_path=args.credentials)
     store = SQLiteQueueStore(config.state_dir / "queue.sqlite")
-    result = asyncio.run(SQLiteCommandHandlers(store).drain({}))
+    try:
+        result = asyncio.run(SQLiteCommandHandlers(store).drain({}))
+    finally:
+        store.close()
     LOG.info("drain mode enabled; state=%s", result.state)
+    return 0
+
+
+def _resume(args: argparse.Namespace) -> int:
+    config = load_config(config_path=args.config, credentials_path=args.credentials)
+    store = SQLiteQueueStore(config.state_dir / "queue.sqlite")
+    try:
+        result = asyncio.run(SQLiteCommandHandlers(store).resume({}))
+    finally:
+        store.close()
+    LOG.info("drain mode disabled; state=%s", result.state)
     return 0
 
 
@@ -283,13 +284,6 @@ def _session_refresh(args: argparse.Namespace) -> int:
     return 0
 
 
-def _network_blocklist_override(values: list[str] | None) -> dict[str, object | None]:
-    if values is None:
-        return {}
-    entries = tuple(part.strip() for value in values for part in value.split(",") if part.strip())
-    return {"network_blocklist": entries}
-
-
 def _skip_checks(values: list[str] | None) -> tuple[str, ...]:
     if values is None:
         return ()
@@ -309,10 +303,17 @@ async def _run_service(
     metrics: MetricsCollector,
 ) -> None:
     command_handlers = SQLiteCommandHandlers(store)
+    event_spool = SQLiteEventOutbox(
+        store,
+        max_bytes=config.outbox_max_bytes,
+        retention_days=config.state_retention_days,
+    )
+    store.prune_terminal(retention_days=config.state_retention_days)
+    await event_spool.prune()
     uplink = BuildEngineUplink(
         config,
         credentials,
-        event_spool=SQLiteEventOutbox(store),
+        event_spool=event_spool,
         command_handlers=command_handlers,
         heartbeat_provider=heartbeat_snapshot,
         metrics=metrics,
@@ -326,14 +327,6 @@ async def _run_service(
             credentials=credentials,
             metrics=metrics,
             stop_event=stop_workers,
-        )
-    )
-    metrics_task = asyncio.create_task(
-        run_metrics_reporter(
-            config=config,
-            credentials=credentials,
-            store=store,
-            collector=metrics,
         )
     )
     loop = asyncio.get_running_loop()
@@ -367,16 +360,18 @@ async def _run_service(
         if drain_task is not None:
             await asyncio.gather(drain_task, return_exceptions=True)
         stop_workers.set()
-        metrics_task.cancel()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(worker_task, timeout=config.sigterm_grace_seconds)
         if not worker_task.done():
             worker_task.cancel()
-        await asyncio.gather(worker_task, metrics_task, return_exceptions=True)
-        write_textfile_metrics(
-            config.state_dir / "metrics.prom",
-            metrics.snapshot(
-                queue_depth=store.queue_depth(),
-                cache_size_bytes=cache_size_bytes(config.state_dir),
-            ),
-        )
+        await asyncio.gather(worker_task, return_exceptions=True)
+        try:
+            write_textfile_metrics(
+                config.state_dir / "metrics.prom",
+                metrics.snapshot(
+                    queue_depth=store.queue_depth(),
+                    cache_size_bytes=cache_size_bytes(config.state_dir),
+                ),
+            )
+        finally:
+            event_spool.close()

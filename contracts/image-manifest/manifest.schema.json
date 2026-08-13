@@ -15,7 +15,7 @@
         "required": ["tag", "digest", "frameworks"],
         "properties": {
           "tag": { "type": "string", "minLength": 1 },
-          "digest": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+          "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
           "frameworks": {
             "type": "array",
             "items": { "type": "string", "minLength": 1 },
@@ -30,8 +30,8 @@
       "type": "object",
       "required": ["proto_min", "proto_max", "engine_min"],
       "properties": {
-        "proto_min": { "type": "integer", "minimum": 1 },
-        "proto_max": { "type": "integer", "minimum": 1 },
+        "proto_min": { "type": "integer", "const": 2 },
+        "proto_max": { "type": "integer", "const": 2 },
         "engine_min": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -39,4 +39,3 @@
   },
   "additionalProperties": false
 }
-

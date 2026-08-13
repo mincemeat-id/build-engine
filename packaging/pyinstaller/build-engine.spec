@@ -18,6 +18,7 @@ hiddenimports = sorted(
     }
 )
 datas = copy_metadata("mincemeat-build-engine")
+datas += [(str(repo_root / "src" / "build_engine" / "data" / "manifest.json"), "build_engine/data")]
 for package in ("tzdata",):
     package_spec = find_spec(package)
     if package_spec is not None and package_spec.submodule_search_locations is not None:

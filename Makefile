@@ -1,4 +1,4 @@
-.PHONY: verify lint fmt typecheck security test coverage binary-smoke deb release-artifacts release ubuntu-24-smoke contracts-sync deploy-check hooks-install hooks-uninstall
+.PHONY: verify lint fmt typecheck security test coverage binary-smoke deb release-artifacts release ubuntu-24-smoke docker-integration contracts-sync deploy-check hooks-install hooks-uninstall
 
 verify: contracts-sync
 	uv run python -m compileall src tests
@@ -41,12 +41,16 @@ release-artifacts: binary-smoke
 
 release:
 ifndef VERSION
-	$(error VERSION is required, for example: make release VERSION=0.2.0)
+	$(error VERSION is required, for example: make release VERSION=0.3.0)
 endif
 	bash scripts/prepare-release.sh "$(VERSION)"
 
 ubuntu-24-smoke:
 	bash scripts/smoke-ubuntu-24.04.sh
+
+docker-integration:
+	@test "$${BUILD_ENGINE_DOCKER_INTEGRATION:-}" = 1 || (echo "Set BUILD_ENGINE_DOCKER_INTEGRATION=1 to run the required Docker harness" >&2; exit 2)
+	uv run pytest tests/integration/test_docker_v2_harness.py tests/integration/test_docker.py tests/integration/test_final_images.py -q
 
 contracts-sync:
 	uv run python scripts/sync_contracts.py

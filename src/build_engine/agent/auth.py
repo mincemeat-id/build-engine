@@ -6,6 +6,7 @@ import json
 import os
 import pwd
 import stat
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -66,15 +67,17 @@ class BuildEngineAuthClient:
         registration_token: str,
         name: str,
         capabilities: dict[str, object],
+        version: str,
     ) -> dict[str, object]:
         """Register the engine using a one-time token."""
 
         return self._post_json(
-            "/api/v1/build-engines/agent/register",
+            "/api/v2/build-engines/agent/register",
             {
                 "registration_token": registration_token,
                 "name": name,
                 "capabilities": capabilities,
+                "version": version,
             },
         )
 
@@ -82,7 +85,7 @@ class BuildEngineAuthClient:
         """Request a fresh backend-minted engine session JWT."""
 
         payload = self._post_json(
-            "/api/v1/build-engines/agent/sessions",
+            "/api/v2/build-engines/agent/sessions",
             {"engine_id": engine_id, "engine_secret": engine_secret},
         )
         return _session_from_payload(payload)
@@ -112,6 +115,48 @@ class BuildEngineAuthClient:
         )
         return refreshed
 
+    def fetch_attempt_secrets(
+        self,
+        *,
+        build_job_id: str,
+        attempt_id: str,
+        credentials: EngineCredentials,
+    ) -> dict[str, str]:
+        """Fetch an attempt-scoped secret environment without persisting it."""
+
+        for value, label in ((build_job_id, "build_job_id"), (attempt_id, "attempt_id")):
+            try:
+                uuid.UUID(value)
+            except ValueError as exc:
+                raise AuthError(f"{label} must be a UUID") from exc
+        url = (
+            f"{self.backend_url}/api/v2/build-engines/agent/jobs/"
+            f"{build_job_id}/attempts/{attempt_id}/secrets"
+        )
+        req = request.Request(
+            url,
+            method="GET",
+            headers={**client_headers_for_credentials(credentials), "Accept": "application/json"},
+        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:  # nosec B310
+                decoded = json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            raise AuthError(f"Secret fetch failed: HTTP {exc.code}") from exc
+        except (error.URLError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise AuthError("Secret fetch failed") from exc
+        if not isinstance(decoded, dict):
+            raise AuthError("Secret fetch response was not a JSON object")
+        raw_env = decoded.get("env", decoded)
+        if not isinstance(raw_env, dict):
+            raise AuthError("Secret fetch response did not contain an env object")
+        result: dict[str, str] = {}
+        for key, value in raw_env.items():
+            if not isinstance(key, str) or not isinstance(value, str) or not key or not value:
+                raise AuthError("Secret fetch response contained an invalid environment value")
+            result[key] = value
+        return result
+
     def _post_json(self, path: str, payload: dict[str, object]) -> dict[str, object]:
         body = json.dumps(payload).encode("utf-8")
         req = request.Request(
@@ -124,8 +169,7 @@ class BuildEngineAuthClient:
             with request.urlopen(req, timeout=self.timeout_seconds) as response:  # nosec B310
                 data = response.read()
         except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise AuthError(f"Backend auth request failed: HTTP {exc.code} {detail}") from exc
+            raise AuthError(f"Backend auth request failed: HTTP {exc.code}") from exc
         except error.URLError as exc:
             raise AuthError(f"Backend auth request failed: {exc.reason}") from exc
         decoded = json.loads(data.decode("utf-8"))
@@ -152,6 +196,7 @@ def register_engine(
         registration_token=registration_token,
         name=config.name,
         capabilities=config_capabilities(config),
+        version=__version__,
     )
     credentials = _credentials_from_registration_response(
         response,

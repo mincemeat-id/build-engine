@@ -1,7 +1,8 @@
-"""Property tests for the v1 websocket envelope boundary."""
+"""Property tests for the v2 websocket envelope boundary."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -65,7 +66,7 @@ def test_validate_envelope_rejects_non_object_payloads(payload: object) -> None:
 @settings(max_examples=80)
 @given(seq=st.one_of(st.integers(max_value=-1), st.text(), st.none(), st.booleans()))
 def test_validate_envelope_rejects_invalid_sequence_values(seq: object) -> None:
-    raw = _valid_raw() | {"attempt_id": "attempt-a", "seq": seq}
+    raw = _valid_raw() | {"attempt_id": "22222222-2222-2222-2222-222222222222", "seq": seq}
 
     with pytest.raises(ProtocolError, match="seq must be a non-negative integer"):
         validate_envelope(raw)
@@ -94,9 +95,10 @@ def test_validate_envelope_rejects_unknown_message_types(message_type: str) -> N
 
 def _valid_raw() -> dict[str, Any]:
     return {
-        "v": 1,
-        "id": "message-id",
-        "type": "status",
-        "ts": "2030-01-01T00:00:00Z",
+        "v": 2,
+        "id": "11111111-1111-1111-1111-111111111111",
+        "type": "attempt.status",
+        "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "engine_id": "00000000-0000-0000-0000-000000000000",
         "payload": {},
     }

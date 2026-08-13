@@ -8,17 +8,15 @@ from typing import Literal
 
 from build_engine.detect.package_json import PackageJson, load_package_json
 
-type PackageManager = Literal["npm", "pnpm", "yarn", "bun"]
+type PackageManager = Literal["npm", "pnpm", "none"]
 
-PACKAGE_MANAGERS: frozenset[PackageManager] = frozenset(("npm", "pnpm", "yarn", "bun"))
+PACKAGE_MANAGERS: frozenset[PackageManager] = frozenset(("npm", "pnpm"))
 LOCKFILE_PRIORITY: tuple[tuple[str, PackageManager], ...] = (
-    ("bun.lockb", "bun"),
-    ("bun.lock", "bun"),
     ("pnpm-lock.yaml", "pnpm"),
-    ("yarn.lock", "yarn"),
     ("package-lock.json", "npm"),
     ("npm-shrinkwrap.json", "npm"),
 )
+UNSUPPORTED_LOCKFILES = ("bun.lockb", "bun.lock", "yarn.lock")
 
 
 class PackageManagerDetectionError(ValueError):
@@ -56,6 +54,12 @@ def detect_package_manager(
         if path.exists():
             return PackageManagerDetection(manager=manager, source="lockfile", lockfile=path)
 
+    for filename in UNSUPPORTED_LOCKFILES:
+        if (project_root / filename).exists():
+            raise PackageManagerDetectionError(
+                f"Unsupported package manager lockfile {filename!r}; use npm or pnpm"
+            )
+
     return PackageManagerDetection(manager="npm", source="fallback")
 
 
@@ -64,17 +68,13 @@ def parse_package_manager(value: str) -> tuple[PackageManager, str | None]:
 
     name, separator, version = value.partition("@")
     if not name:
-        raise PackageManagerDetectionError("packageManager must name npm, pnpm, yarn, or bun")
+        raise PackageManagerDetectionError("packageManager must name npm or pnpm")
     parsed_version = version if separator and version else None
     match name:
         case "npm":
             return "npm", parsed_version
         case "pnpm":
             return "pnpm", parsed_version
-        case "yarn":
-            return "yarn", parsed_version
-        case "bun":
-            return "bun", parsed_version
         case _:
             supported = ", ".join(sorted(PACKAGE_MANAGERS))
             raise PackageManagerDetectionError(
@@ -92,40 +92,27 @@ def install_command(
 
     project_root = Path(root)
     match manager:
+        case "none":
+            return ""
         case "npm":
             return "npm ci" if _has_npm_lock(project_root) else "npm install"
         case "pnpm":
             return "pnpm install --frozen-lockfile"
-        case "yarn":
-            if _is_yarn_berry(project_root, detection):
-                return "yarn install --immutable"
-            return "yarn install --frozen-lockfile"
-        case "bun":
-            return "bun install --frozen-lockfile"
 
 
 def run_script_command(manager: PackageManager, script_name: str) -> str:
     """Return the command for invoking a package script."""
 
     match manager:
+        case "none":
+            raise PackageManagerDetectionError(
+                "The selected profile does not use a package manager"
+            )
         case "npm":
             return f"npm run {script_name}"
         case "pnpm":
             return f"pnpm run {script_name}"
-        case "yarn":
-            return f"yarn {script_name}"
-        case "bun":
-            return f"bun run {script_name}"
 
 
 def _has_npm_lock(root: Path) -> bool:
     return (root / "package-lock.json").exists() or (root / "npm-shrinkwrap.json").exists()
-
-
-def _is_yarn_berry(root: Path, detection: PackageManagerDetection | None) -> bool:
-    if (root / ".yarnrc.yml").exists():
-        return True
-    if detection is None or detection.version is None:
-        return False
-    major_text = detection.version.split(".", 1)[0]
-    return major_text.isdigit() and int(major_text) >= 2

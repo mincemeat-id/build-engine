@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
-from collections.abc import Mapping
+import threading
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -23,6 +26,9 @@ type CacheEvent = Literal["HIT", "MISS", "WIPED"]
 
 METADATA_FILENAME = ".build-engine-cache.json"
 DISABLED_MARKER_FILENAME = ".build-engine-cache-disabled"
+_CACHE_LOCKS: dict[str, threading.RLock] = {}
+_CACHE_LOCKS_GUARD = threading.Lock()
+_CACHE_ALL_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +53,12 @@ class SiteCache:
         host = self.root
         container = "/cache"
         host.mkdir(parents=True, exist_ok=True)
-        return (CacheMount(host_path=host, container_path=container),)
+        mounts = [CacheMount(host_path=host, container_path=container)]
+        if self.package_manager in {"npm", "pnpm"}:
+            node_home = host / "node-home"
+            node_home.mkdir(parents=True, exist_ok=True)
+            mounts.append(CacheMount(host_path=node_home, container_path="/home/node"))
+        return tuple(mounts)
 
     @property
     def metadata_path(self) -> Path:
@@ -80,6 +91,7 @@ class CachePrepareResult:
 def site_cache(state_dir: Path | str, site_id: str, package_manager: PackageManager) -> SiteCache:
     """Resolve the cache root for a site and package manager."""
 
+    _validate_site_id(site_id)
     return SiteCache(root=Path(state_dir) / "cache" / site_id, package_manager=package_manager)
 
 
@@ -94,33 +106,34 @@ def prepare_site_cache(
     """Prepare per-site package-manager cache mounts for one build."""
 
     cache = site_cache(state_dir, site_id, package_manager)
-    if not enabled:
-        cache.root.mkdir(parents=True, exist_ok=True)
-        cache.disabled_marker_path.write_text(_utcnow(), encoding="utf-8")
-        return CachePrepareResult(mounts=(), event=None, lockfile=None)
+    with _site_cache_lock(site_id):
+        if not enabled:
+            cache.root.mkdir(parents=True, exist_ok=True)
+            cache.disabled_marker_path.write_text(_utcnow(), encoding="utf-8")
+            return CachePrepareResult(mounts=(), event=None, lockfile=None)
 
-    lockfile = lockfile_snapshot(project_root, package_manager)
-    wiped = False
-    if cache.disabled_marker_path.exists():
-        reset_cache(state_dir, site_id=site_id)
-        wiped = True
+        lockfile = lockfile_snapshot(project_root, package_manager)
+        wiped = False
+        if cache.disabled_marker_path.exists():
+            _reset_cache_unlocked(state_dir, site_id=site_id)
+            wiped = True
 
-    previous = _read_metadata(cache.metadata_path)
-    if previous is not None and _metadata_lockfile(previous) != lockfile:
-        reset_cache(state_dir, site_id=site_id)
-        wiped = True
+        previous = _read_metadata(cache.metadata_path)
+        if previous is not None and _metadata_lockfile(previous) != lockfile:
+            _reset_cache_unlocked(state_dir, site_id=site_id)
+            wiped = True
 
-    had_contents = _has_cache_contents(cache.root)
-    mounts = cache.mounts()
-    _write_metadata(cache, lockfile)
-    touch_site_cache(cache.root)
-    if wiped:
-        return CachePrepareResult(mounts=mounts, event="WIPED", lockfile=lockfile)
-    return CachePrepareResult(
-        mounts=mounts,
-        event="HIT" if previous is not None and had_contents else "MISS",
-        lockfile=lockfile,
-    )
+        had_contents = _has_cache_contents(cache.root)
+        mounts = cache.mounts()
+        _write_metadata(cache, lockfile)
+        touch_site_cache(cache.root)
+        if wiped:
+            return CachePrepareResult(mounts=mounts, event="WIPED", lockfile=lockfile)
+        return CachePrepareResult(
+            mounts=mounts,
+            event="HIT" if previous is not None and had_contents else "MISS",
+            lockfile=lockfile,
+        )
 
 
 def lockfile_snapshot(
@@ -211,6 +224,19 @@ def prune_cache(
 def reset_cache(state_dir: Path | str, *, site_id: str | None = None) -> None:
     """Delete one site's cache, or all local build caches."""
 
+    if site_id is not None:
+        _validate_site_id(site_id)
+    if site_id is None:
+        with _CACHE_ALL_LOCK:
+            _reset_cache_unlocked(state_dir, site_id=None)
+        return
+    with _site_cache_lock(site_id):
+        _reset_cache_unlocked(state_dir, site_id=site_id)
+
+
+def _reset_cache_unlocked(state_dir: Path | str, *, site_id: str | None) -> None:
+    """Delete cache data while the caller owns the relevant lock."""
+
     cache_root = Path(state_dir) / "cache"
     target = cache_root / site_id if site_id is not None else cache_root
     if not target.exists():
@@ -218,6 +244,20 @@ def reset_cache(state_dir: Path | str, *, site_id: str | None = None) -> None:
     if not target.is_dir():
         raise CacheError(f"Cache path is not a directory: {target}")
     shutil.rmtree(target)
+
+
+@contextmanager
+def _site_cache_lock(site_id: str) -> Iterator[None]:
+    with _CACHE_ALL_LOCK:
+        with _CACHE_LOCKS_GUARD:
+            lock = _CACHE_LOCKS.setdefault(site_id, threading.RLock())
+        with lock:
+            yield
+
+
+def _validate_site_id(site_id: str) -> None:
+    if not isinstance(site_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", site_id):
+        raise CacheError("site_id must be a safe path component")
 
 
 def _site_roots(cache_root: Path) -> tuple[Path, ...]:

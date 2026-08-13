@@ -3,9 +3,20 @@
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project follows semantic versioning once v1 artifacts are published.
+and this project follows semantic versioning.
 
 ## [Unreleased]
+
+## [0.3.0] - 2026-08-13
+
+### Added
+
+- Production protocol v2 cutover with strict WSS envelopes, replayable events,
+  transactional leases, cancellation requests, and bounded retention.
+- Digest-only curated builders for Astro, Vite, Eleventy, Docusaurus,
+  VitePress, VuePress, Gatsby, and Hugo.
+- Attempt-scoped source and secret flows, canonical workspaces, secure output
+  packaging, and read-only operational diagnostics.
 
 ## [0.2.0] - 2026-05-24
 
@@ -22,8 +33,8 @@ and this project follows semantic versioning once v1 artifacts are published.
 - Debian package build support, PyInstaller release artifacts, SHA256 manifests,
   Sigstore signing, SLSA provenance, CycloneDX SBOMs, and release-bundle
   verification tooling.
-- Final `build-engine-images` `v1.0.0` manifest snapshot and integration tests
-  that exercise digest-pinned Node, Bun, Hugo, and Zola builder images.
+- Final `build-engine-images` `v1.0.0` manifest snapshot and opt-in Docker
+  integration coverage for the eight certified builder profiles.
 
 ### Changed
 
@@ -60,6 +71,7 @@ and this project follows semantic versioning once v1 artifacts are published.
   protocol handling, durable SQLite queue, Docker executor, cache handling,
   metrics collection, contract snapshots, and PyInstaller packaging smoke path.
 
-[Unreleased]: https://github.com/mincemeat-id/build-engine/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mincemeat-id/build-engine/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mincemeat-id/build-engine/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mincemeat-id/build-engine/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mincemeat-id/build-engine/releases/tag/v0.1.0

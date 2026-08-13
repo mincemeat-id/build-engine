@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import sqlite3
 import subprocess  # nosec B404
@@ -12,7 +13,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Literal
 from urllib import error, request
 
@@ -29,14 +29,18 @@ from build_engine.agent.auth import (
 from build_engine.agent.protocol import PROTOCOL_VERSION, Envelope, ProtocolError, decode_frame
 from build_engine.agent.uplink import uplink_headers, websocket_url
 from build_engine.config import EngineConfig, EngineCredentials
-from build_engine.executor.docker_runner import DockerError, pull_image
-from build_engine.executor.network import NetworkGuardError, ensure_network_guard
+from build_engine.executor.docker_runner import (
+    DockerError,
+    load_bundled_image_manifest,
+    pull_image,
+    resolve_image_reference,
+)
 
 CheckStatus = Literal["ok", "fail", "skip"]
 Clock = Callable[[], datetime]
 
 MIN_FREE_BYTES = 20 * 1024**3
-HEALTH_PATH = "/api/v1/build-engines/agent/health"
+HEALTH_PATH = "/api/v2/build-engines/agent/health"
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,12 +132,10 @@ def run_doctor(
             _check_disk_space(config),
             _check_writable_paths(config),
             _check_sqlite_integrity(config.state_dir / "queue.sqlite"),
-            _skip("network_guard", "disabled by configuration")
-            if not config.network_guard_enabled
-            else _maybe_skip(
-                "network_guard",
+            _maybe_skip(
+                "builder_network",
                 skipped,
-                lambda: _check_network_guard(config, timeout_seconds=timeout_seconds),
+                _check_builder_network,
             ),
         )
     )
@@ -283,17 +285,26 @@ def _check_disk_space(config: EngineConfig) -> DoctorCheck:
 
 
 def _check_writable_paths(config: EngineConfig) -> DoctorCheck:
-    paths = (config.state_dir / "jobs", config.state_dir / "cache")
-    try:
-        for path in paths:
-            path.mkdir(parents=True, exist_ok=True)
-            with NamedTemporaryFile(prefix=".doctor-", dir=path, delete=True):
-                pass
-    except OSError as exc:
-        return _fail("writable_paths", str(exc), {"paths": [str(path) for path in paths]})
+    paths = (
+        config.state_dir,
+        config.state_dir / "workspaces",
+        config.state_dir / "cache",
+        config.state_dir / "tmp",
+    )
+    inaccessible = []
+    for path in paths:
+        existing = _nearest_existing_path(path)
+        if not os.access(existing, os.W_OK | os.X_OK):
+            inaccessible.append(str(path))
+    if inaccessible:
+        return _fail(
+            "writable_paths",
+            "one or more state paths are not writable",
+            {"paths": [str(path) for path in paths], "inaccessible": inaccessible},
+        )
     return _ok(
         "writable_paths",
-        "workspace and cache paths are writable",
+        "state paths are writable (read-only check)",
         {"paths": [str(path) for path in paths]},
     )
 
@@ -320,16 +331,11 @@ def _check_sqlite_integrity(queue_path: Path) -> DoctorCheck:
     return _ok("sqlite_integrity", "ok", {"path": str(queue_path)})
 
 
-def _check_network_guard(config: EngineConfig, *, timeout_seconds: float) -> DoctorCheck:
-    del timeout_seconds
-    try:
-        guard = ensure_network_guard(blocklist=config.network_blocklist)
-    except (NetworkGuardError, FileNotFoundError, OSError) as exc:
-        return _fail("network_guard", str(exc))
+def _check_builder_network() -> DoctorCheck:
     return _ok(
-        "network_guard",
-        f"Docker network {guard.name} is available",
-        {"network": guard.name, "blocklist": list(guard.blocklist)},
+        "builder_network",
+        "builders use unrestricted outbound Docker networking",
+        {"network": "unrestricted"},
     )
 
 
@@ -405,7 +411,12 @@ def _check_wss_handshake(
 
 
 def _check_image_pull(config: EngineConfig, *, timeout_seconds: float) -> DoctorCheck:
-    image = config.images[0] if config.images else "node:20"
+    try:
+        manifest = load_bundled_image_manifest()
+        configured = config.images[0] if config.images else next(iter(manifest))
+        image = resolve_image_reference(configured, manifest=manifest)
+    except DockerError as exc:
+        return _fail("image_pull", str(exc))
     try:
         pull_image(image, timeout_seconds=timeout_seconds)
     except (DockerError, subprocess.TimeoutExpired, OSError) as exc:

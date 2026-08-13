@@ -1,4 +1,4 @@
-"""Build detection and planning tests."""
+"""Certified framework registry and compatibility tests."""
 
 from pathlib import Path
 
@@ -6,12 +6,18 @@ import pytest
 
 from build_engine.detect.compatibility import check_static_compatibility
 from build_engine.detect.framework import (
+    DEFERRED_FRAMEWORK_IDS,
+    SUPPORTED_FRAMEWORK_IDS,
     DetectionError,
     infer_generic_output,
     plan_build,
     select_node_version,
 )
-from build_engine.detect.lockfiles import detect_package_manager, install_command
+from build_engine.detect.lockfiles import (
+    PackageManagerDetectionError,
+    detect_package_manager,
+    install_command,
+)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "sites"
 
@@ -29,38 +35,27 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "sites"
             "pnpm",
             "node:22",
             "pnpm run docs:build",
-            ".vitepress/dist",
+            "docs/.vitepress/dist",
         ),
-        ("vuepress-docs", "vuepress", "pnpm", "node:22", "pnpm run docs:build", "dist"),
+        (
+            "vuepress-docs",
+            "vuepress",
+            "pnpm",
+            "node:22",
+            "pnpm run docs:build",
+            "docs/.vuepress/dist",
+        ),
         ("gatsby-blog", "gatsby", "npm", "node:22", "npm run build", "public"),
-        ("hugo-quickstart", "hugo", "npm", "hugo:latest", "hugo", "public"),
-        ("nextjs-export", "next-export", "pnpm", "node:22", "pnpm run build", "out"),
-        (
-            "nuxt-generate",
-            "nuxt-generate",
-            "pnpm",
-            "node:22",
-            "pnpm run generate",
-            ".output/public",
-        ),
-        (
-            "sveltekit-static",
-            "sveltekit-static",
-            "pnpm",
-            "node:22",
-            "pnpm run build",
-            "build",
-        ),
-        ("generic-static", "generic", "npm", "node:22", "npm run build", None),
+        ("hugo-quickstart", "hugo", "none", "hugo:latest", "hugo", "public"),
     ),
 )
-def test_v1_ga_fixture_profiles_resolve_build_plans(
+def test_certified_fixture_profiles_resolve_build_plans(
     fixture: str,
     framework_id: str,
     package_manager: str,
     image: str,
     build_command: str,
-    output_dir: str | None,
+    output_dir: str,
 ) -> None:
     plan = plan_build(FIXTURES / fixture)
 
@@ -72,6 +67,36 @@ def test_v1_ga_fixture_profiles_resolve_build_plans(
     assert plan.compatibility.compatible
 
 
+def test_registry_contains_only_the_eight_production_profiles() -> None:
+    assert {
+        "astro",
+        "vite",
+        "eleventy",
+        "docusaurus",
+        "vitepress",
+        "vuepress",
+        "gatsby",
+        "hugo",
+    } == SUPPORTED_FRAMEWORK_IDS
+    assert {
+        "bun",
+        "yarn",
+        "zola",
+        "generic",
+        "angular",
+        "remix",
+        "next",
+        "nuxt",
+        "sveltekit",
+    } <= DEFERRED_FRAMEWORK_IDS
+
+
+def test_deferred_frameworks_fail_without_silent_fallback() -> None:
+    for fixture in ("nextjs-export", "nuxt-generate", "sveltekit-static", "generic-static"):
+        with pytest.raises(DetectionError, match="curated eight|deferred|certified"):
+            plan_build(FIXTURES / fixture)
+
+
 def test_package_manager_prefers_package_manager_field_over_lockfile() -> None:
     detection = detect_package_manager(FIXTURES / "astro-blog")
 
@@ -80,30 +105,18 @@ def test_package_manager_prefers_package_manager_field_over_lockfile() -> None:
     assert detection.version == "9.12.0"
 
 
-def test_framework_detection_uses_package_scripts_without_dependency_marker(tmp_path: Path) -> None:
-    (tmp_path / "package.json").write_text('{"scripts": {"build": "astro build"}}')
+def test_unsupported_package_manager_is_blocked(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text('{"packageManager":"yarn@1.22.0"}')
 
-    plan = plan_build(tmp_path)
-
-    assert plan.framework_id == "astro"
-    assert plan.build_command == "npm run build"
+    with pytest.raises(PackageManagerDetectionError, match="supported managers"):
+        detect_package_manager(tmp_path)
 
 
-def test_framework_detection_requires_script_command_tokens(tmp_path: Path) -> None:
-    (tmp_path / "package.json").write_text(
-        """
-        {
-          "scripts": {
-            "build": "echo astro buildable",
-            "build:storybook": "astro-storybook build"
-          }
-        }
-        """
-    )
+def test_framework_detection_requires_certified_script_command(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text('{"scripts":{"build":"echo astro buildable"}}')
 
-    plan = plan_build(tmp_path)
-
-    assert plan.framework_id == "generic"
+    with pytest.raises(DetectionError, match="certified"):
+        plan_build(tmp_path)
 
 
 def test_npm_install_uses_ci_when_lockfile_exists() -> None:
@@ -113,7 +126,7 @@ def test_npm_install_uses_ci_when_lockfile_exists() -> None:
     assert install_command("npm", root=FIXTURES / "vite-vanilla", detection=detection) == "npm ci"
 
 
-def test_node_version_selects_newest_supported_major_from_range() -> None:
+def test_node_version_selects_only_supported_major() -> None:
     selection = select_node_version(None, override=">=20 <23")
 
     assert selection.major == 22
@@ -125,14 +138,14 @@ def test_node_version_rejects_ranges_outside_supported_majors() -> None:
         select_node_version(None, override=">=24")
 
 
-def test_next_export_without_export_config_returns_guidance() -> None:
-    plan = plan_build(FIXTURES / "nextjs-noexport")
+def test_hugo_has_no_node_package_manager() -> None:
+    plan = plan_build(FIXTURES / "hugo-quickstart")
 
-    assert not plan.compatibility.compatible
-    assert plan.guidance[0].to_dict()["code"] == "NEXTJS_REQUIRES_EXPORT"
+    assert plan.package_manager == "none"
+    assert plan.install_command == ""
 
 
-def test_generic_output_inference_uses_first_index_html_candidate(tmp_path: Path) -> None:
+def test_generic_output_inference_remains_migration_only(tmp_path: Path) -> None:
     output = tmp_path / "dist"
     output.mkdir()
     (output / "index.html").write_text("<!doctype html>")
@@ -145,33 +158,12 @@ def test_generic_output_inference_returns_guidance_when_missing() -> None:
         infer_generic_output(FIXTURES / "generic-static")
 
 
-def test_sveltekit_static_guidance_requires_adapter_config(tmp_path: Path) -> None:
-    package_json_path = tmp_path / "package.json"
-    package_json_path.write_text(
-        """
-        {
-          "scripts": {"build": "vite build"},
-          "dependencies": {"@sveltejs/kit": "^2.0.0"}
-        }
-        """
+def test_compatibility_checker_blocks_profiles_outside_the_registry() -> None:
+    result = check_static_compatibility(
+        FIXTURES / "nextjs-noexport",
+        "next-export",
+        None,
+        supported_frameworks=SUPPORTED_FRAMEWORK_IDS,
     )
-    plan = plan_build(tmp_path)
 
-    assert plan.framework_id == "sveltekit-static"
-    assert not plan.compatibility.compatible
-    assert plan.guidance[0].code == "SVELTEKIT_REQUIRES_ADAPTER_STATIC"
-
-
-def test_compatibility_guidance_payload_shape() -> None:
-    result = check_static_compatibility(FIXTURES / "nextjs-noexport", "next-export", None)
-
-    assert result.guidance[0].to_dict() == {
-        "code": "NEXTJS_REQUIRES_EXPORT",
-        "title": "Next.js project is not configured for static export",
-        "what_we_saw": "next.config.js does not set output: 'export'",
-        "how_to_fix": (
-            "Add output: 'export' to next.config.js and ensure API routes and other "
-            "server-only features are not used."
-        ),
-        "docs_url": "https://docs.mincemeat.id/static-sites/frameworks/nextjs",
-    }
+    assert result.guidance[0].code == "FRAMEWORK_NOT_CERTIFIED"

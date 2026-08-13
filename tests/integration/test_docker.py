@@ -11,8 +11,13 @@ import pytest
 
 from build_engine.config import EngineConfig
 from build_engine.executor.artifact import package_output
-from build_engine.executor.docker_runner import DockerRunSpec, pull_image, run_container
-from build_engine.executor.network import DockerNetworkGuard
+from build_engine.executor.docker_runner import (
+    DockerRunSpec,
+    load_bundled_image_manifest,
+    pull_image,
+    resolve_image_reference,
+    run_container,
+)
 
 
 @pytest.mark.skipif(
@@ -39,10 +44,11 @@ async def _hugo_latest_fixture_builds_and_packages_output(tmp_path: Path) -> Non
     async def publish(stream: str, data: str) -> None:
         logs.append((stream, data))
 
-    await asyncio.to_thread(pull_image, "hugo:latest", timeout_seconds=180)
+    image = resolve_image_reference("hugo:latest", manifest=load_bundled_image_manifest())
+    await asyncio.to_thread(pull_image, image, timeout_seconds=180)
     result = await run_container(
         DockerRunSpec(
-            image="hugo:latest",
+            image=image,
             project_root=project_root,
             command="hugo --destination public",
             config=EngineConfig(
@@ -50,7 +56,6 @@ async def _hugo_latest_fixture_builds_and_packages_output(tmp_path: Path) -> Non
                 build_timeout_seconds=60,
                 sigterm_grace_seconds=1,
             ),
-            network_guard=DockerNetworkGuard(name="none"),
         ),
         publish_log=publish,
     )

@@ -18,7 +18,10 @@ DESTDIR="$ROOT" BUILD_ENGINE_BINARY="dist/build-engine" bash scripts/install-bui
 DESTDIR="$ROOT" BUILD_ENGINE_BINARY="dist/build-engine" bash scripts/install-build-engine.sh
 
 "$ROOT/usr/local/bin/build-engine" --version
-"$ROOT/usr/local/bin/build-engine" drain
+# DESTDIR is a staged filesystem, not a chroot. Point the CLI at its staged
+# state so the smoke remains unprivileged and does not touch host runtime data.
+BUILD_ENGINE_STATE_DIR="$ROOT/var/lib/build-engine" \
+  "$ROOT/usr/local/bin/build-engine" drain
 
 test -x "$ROOT/usr/local/bin/build-engine"
 test -f "$ROOT/etc/systemd/system/build-engine.service"

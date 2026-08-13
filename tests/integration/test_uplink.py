@@ -40,7 +40,7 @@ async def _uplink_reconnect_replays_attempt_events_to_backend_cursor(
     spool = EventSpool(tmp_path / "events.jsonl")
     await spool.append(
         new_envelope(
-            "status",
+            "attempt.status",
             {"phase": "PREPARING"},
             build_job_id=build_job_id,
             attempt_id=attempt_id,
@@ -49,7 +49,7 @@ async def _uplink_reconnect_replays_attempt_events_to_backend_cursor(
     )
     await spool.append(
         new_envelope(
-            "status",
+            "attempt.status",
             {"phase": "BUILDING"},
             build_job_id=build_job_id,
             attempt_id=attempt_id,
@@ -60,13 +60,13 @@ async def _uplink_reconnect_replays_attempt_events_to_backend_cursor(
     async with websockets.serve(server.handle, "127.0.0.1", 0) as ws_server:
         socket = next(iter(ws_server.sockets))
         host, port = socket.getsockname()[:2]
-        url = f"ws://{host}:{port}/api/v1/build-engines/agent/ws"
+        url = f"ws://{host}:{port}/api/v2/build-engines/agent/ws"
 
         async def connector(
             connect_url: str,
             headers: Mapping[str, str],
         ) -> WebSocketLike:
-            assert connect_url == "wss://agent.example/api/v1/build-engines/agent/ws"
+            assert connect_url == "wss://agent.example/api/v2/build-engines/agent/ws"
             assert headers["Authorization"] == "Bearer session-token"
             return await websockets.connect(
                 url, additional_headers=dict(headers), max_size=1_048_576
@@ -82,7 +82,11 @@ async def _uplink_reconnect_replays_attempt_events_to_backend_cursor(
 
         await uplink.connect_once()
 
-    assert [message["type"] for message in server.messages] == ["hello", "status", "job.ack"]
+    assert [message["type"] for message in server.messages] == [
+        "hello",
+        "attempt.status",
+        "attempt.status",
+    ]
     assert server.messages[1]["seq"] == 2
     assert server.messages[2]["payload"]["state"] == "ASSIGNED"
 
@@ -104,6 +108,7 @@ class _ReplayServer:
                 },
                 build_job_id="44444444-4444-4444-4444-444444444444",
                 attempt_id="55555555-5555-5555-5555-555555555555",
+                engine_id=self.engine_id,
             ).to_json()
         )
         for _ in range(3):
@@ -119,9 +124,10 @@ def _welcome(
         "welcome",
         {
             "engine_id": engine_id,
-            "server_time": "2030-01-01T00:00:00Z",
-            "proto_negotiated": 1,
+            "server_time": "2026-08-13T00:00:00Z",
+            "proto_negotiated": 2,
             "heartbeat_interval_seconds": 60,
             "last_seq": last_seq or {},
         },
+        engine_id=engine_id,
     )

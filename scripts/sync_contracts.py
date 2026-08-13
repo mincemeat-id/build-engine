@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-COREAPP = ROOT.parent / "coreapp"
+COREAPP = Path(os.environ.get("BUILD_ENGINE_COREAPP_ROOT", str(ROOT.parent / "coreapp"))).resolve()
 COREAPP_OPENAPI = COREAPP / "frontend" / "openapi.json"
 TARGET_OPENAPI = ROOT / "contracts" / "openapi" / "build-engine.openapi.json"
 BUILD_ENGINE_IMAGES_MANIFEST = ROOT / "manifest.json"
@@ -21,7 +21,7 @@ BUILD_ENGINE_IMAGES_MANIFEST_URL_ENV = "BUILD_ENGINE_IMAGES_MANIFEST_URL"
 BUILD_ENGINE_SCHEMA_NAMES = {
     "BuildArtifactUploadUrlRequest",
     "BuildArtifactUploadUrlResponse",
-    "BuildAttemptAckRequest",
+    "BuildEngineAttemptSecretsResponse",
     "BuildEngineAgentHealthResponse",
     "BuildEngineAgentRegisterRequest",
     "BuildEngineAgentRegisterResponse",
@@ -85,7 +85,7 @@ def main() -> int:
             "info": {
                 "title": "Mincemeat build-engine contract subset",
                 "version": source["info"]["version"],
-                "x-source": str(COREAPP_OPENAPI.relative_to(ROOT.parent)),
+                "x-source": "coreapp/frontend/openapi.json",
             },
             "paths": dict(sorted(paths.items())),
             "components": {"schemas": components},
