@@ -1,196 +1,114 @@
-# Build Engine Protocol Reference
+# Build-engine protocol v2
 
-> **Status:** Public contract documentation.
-> **Audience:** Build-engine maintainers and operators of the control plane
-> (coreapp) the engine connects to.
+Protocol v2 is a clean break. The normative envelope is
+[`contracts/protocol/wss-v2.json`](../contracts/protocol/wss-v2.json), and the
+OpenAPI subset is regenerated from the separate coreapp checkout.
 
-This document captures the wire-level contract between the build engine agent
-and its control plane (coreapp). The contract is locked by:
+## Transport
 
-- `contracts/openapi/build-engine.openapi.json` — agent HTTP surface.
-- `contracts/protocol/wss-v1.json` — WSS envelope and message-type names.
-- `contracts/image-manifest/manifest.schema.json` — accepted builder-image
-  manifest schema.
-
-The build engine is open source; the control plane that originally drives it
-is not part of this repository. This document describes only the surface the
-engine consumes so any compatible backend implementation can be validated
-against it.
-
-## High-Level Flow
+The engine connects to:
 
 ```text
-Control plane                              Build engine agent
-─────────────                              ──────────────────
-Register one-time token   --register-->    Persist engine credentials
-                                           Open outbound WSS
-Welcome (proto, server time)    <--ws--    Hello (version, capabilities)
-job.assign (attempt payload)    --ws-->    Enqueue, lease, run Docker
-                                <--ws--    status / log / metric / heartbeat
-                                <--ws--    artifact.ready (sha256, size)
-Mint presigned upload URL   <--http--      Request artifact upload URL
-                            --http-->      PUT artifact to staging storage
-                                <--ws--    job.ack (success or structured error)
+wss://<coreapp>/api/v2/build-engines/agent/ws
 ```
 
-## Authentication
+Registration and session refresh use HTTPS:
 
-### Registration
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v2/build-engines/agent/register` | Consume a one-time registration token. |
+| `POST` | `/api/v2/build-engines/agent/sessions` | Mint a short-lived session JWT. |
+| `GET` | `/api/v2/build-engines/agent/health` | Read-only protocol health check. |
+| `GET` | `/api/v2/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/secrets` | Authenticated transient secret fetch. |
+| `POST` | `/api/v2/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/artifact-upload-url` | Request an attempt-bound artifact PUT URL. |
 
-1. An operator obtains a one-time registration token from the control plane.
-2. The operator runs:
+Registration includes the engine package version (`0.3.0`) separately from the
+builder image manifest compatibility version (`1.0.0`).
 
-   ```bash
-   build-engine register \
-     --backend-url https://agent.example.com \
-     --token <one-time-token> \
-     --name build-engine-sfo-1 \
-     --max-concurrency 2
-   ```
+Heartbeat, commands, status, logs, artifacts, errors, and event acknowledgements
+are WSS messages. The old HTTP heartbeat, metrics, and acknowledgement routes
+are not part of v2.
 
-3. The engine POSTs the token, name, capabilities, protocol version, and
-   accepted image-manifest version to
-   `POST /api/v1/build-engines/agent/register`.
-4. The control plane returns `engine_id`, `engine_secret`, and an initial
-   short-lived session JWT. The engine persists credentials at
-   `/etc/mincemeat/build-engine/credentials.toml` with mode `0600`.
+## Envelope
 
-### Session refresh
-
-The engine mints short-lived session JWTs through
-`POST /api/v1/build-engines/agent/sessions` using `engine_id` and
-`engine_secret`. The JWT carries `engine_id`, the negotiated protocol version,
-and a capability digest. JWTs are presented on every HTTP and WSS request.
-
-## WSS Envelope
-
-All frames are JSON. The envelope schema is locked in
-`contracts/protocol/wss-v1.json`:
+Every frame is a JSON object with:
 
 ```json
 {
-  "v": 1,
-  "id": "01HY...",
-  "type": "status",
-  "ts": "2026-05-19T07:00:01.123Z",
+  "v": 2,
+  "id": "canonical-uuid",
+  "type": "attempt.status",
+  "ts": "2026-08-13T00:00:00.000Z",
+  "engine_id": "canonical-uuid",
+  "build_job_id": "canonical-uuid",
+  "attempt_id": "canonical-uuid",
+  "seq": 7,
   "payload": {}
 }
 ```
 
-Attempt-scoped payloads include:
+`id`, `engine_id`, and attempt identifiers use canonical UUID spelling.
+Timestamps must be within five minutes of the receiver clock. Frames are at
+most 1 MiB and log data is at most 64 KiB per frame. Unknown envelope fields,
+negative sequences, and sequences without an attempt are rejected.
 
-```json
-{
-  "build_job_id": "uuid",
-  "attempt_id": "uuid",
-  "seq": 42
-}
-```
+The authenticated engine ID must match the envelope. Attempt events use a
+strictly increasing sequence per attempt. Repeating the same sequence with the
+same logical event is idempotent; a different event at that sequence is a
+protocol error.
 
-`seq` is strictly increasing per `attempt_id`. After a reconnect the engine
-resends unacknowledged events from `last_seq + 1`. Duplicate `job.assign`
-deliveries for the same `(build_job_id, attempt_id)` return the current local
-state without enqueueing twice.
+## Message types
 
-### Inbound (control plane → engine)
+Backend to engine:
 
-| Type | Purpose |
-|------|---------|
-| `welcome` | Negotiated protocol and server time. |
-| `job.assign` | Assign one build attempt. |
-| `cancel` | Cancel attempt. |
-| `cache.reset` | Delete site/all cache. |
-| `drain` | Stop accepting new attempts and finish current. |
-| `ping` | App-level liveness. |
+| Type | Meaning |
+|---|---|
+| `welcome` | Negotiated protocol, heartbeat interval, and replay cursors. |
+| `job.assign` | Assignment metadata for one attempt. |
+| `job.cancel` | Cancellation request; it does not directly force a terminal state. |
+| `cache.reset` | Site-scoped or global cache reset. |
+| `drain` | Enter drain mode, or use payload action `resume` to leave it. |
+| `ping` | Liveness probe. |
+| `event.ack` | Replay cursor acknowledgement. |
 
-### Outbound (engine → control plane)
+Engine to backend:
 
-| Type | Purpose |
-|------|---------|
-| `hello` | Engine version and capabilities. |
-| `job.ack` | Attempt state acknowledgement. |
-| `status` | Phase updates. |
-| `log` | stdout/stderr frames, max 64 KiB. |
-| `metric` | Real-time metric events. |
-| `artifact.ready` | Artifact sha256/size before upload. |
-| `cache.event` | Hit/miss/poisoned/wiped. |
-| `error` | Structured error. |
-| `heartbeat` | Capacity and disk/cache metrics (authoritative liveness signal). |
-| `pong` | App-level liveness. |
+| Type | Meaning |
+|---|---|
+| `hello` | Version, capabilities, and manifest compatibility after `welcome`. |
+| `attempt.status` | Lifecycle phase, metrics, or terminal state. |
+| `attempt.log` | Bounded, redacted best-effort output. |
+| `artifact.ready` | Verified artifact digest and byte count. |
+| `heartbeat` | Liveness, capacity, cache, and operational counters. |
+| `pong` | Response to `ping`. |
+| `error` | Structured execution or protocol error. |
 
-## Build Job Lifecycle
+## Assignment boundary
 
-States observed by the engine for a single attempt:
+An assignment contains only:
 
-```text
-QUEUED -> LEASED -> RUNNING -> SUCCEEDED
-                          |-> FAILED
-                          |-> CANCELLED
-```
+- build, site, and attempt UUIDs;
+- attempt-scoped HTTPS source URL, archive format, byte count, and SHA-256;
+- root directory;
+- one of the certified framework IDs and profile version;
+- bounded timeout and resource limits;
+- cache policy.
 
-Phase-level statuses streamed over `status` events include `pulling_image`,
-`installing`, `building`, `packaging`, `uploading`, and terminal states.
+Image references, commands, manifest paths, network blocklists, and secret
+values do not cross the wire. The engine chooses commands and immutable images
+from its bundled profile and manifest resources.
 
-## HTTP Agent Endpoints
+## Source, secrets, and artifacts
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `POST` | `/api/v1/build-engines/agent/register` | One-time token registration. |
-| `POST` | `/api/v1/build-engines/agent/sessions` | Mint short-lived JWT. |
-| `WS` | `/api/v1/build-engines/agent/ws` | Job/control/status/log stream. |
-| `POST` | `/api/v1/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/artifact-upload-url` | Request presigned staging PUT URL. |
-| `POST` | `/api/v1/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/ack` | Attempt state acknowledgement. |
-| `POST` | `/api/v1/build-engines/agent/metrics` | 15s metrics rollup. |
-| `GET` | `/api/v1/build-engines/agent/health` | Doctor endpoint. |
+Coreapp creates a short-lived source GET URL only after locking and verifying
+the current attempt. The engine checks HTTPS, approved origins, redirects,
+declared size, archive traversal, and SHA-256 before building.
 
-The HTTP fallback `POST /api/v1/build-engines/agent/heartbeats` is reserved in
-the OpenAPI contract but is not used by the engine — heartbeats are sent
-exclusively over the WSS `heartbeat` envelope. Compatible control planes
-should treat the WSS heartbeat as authoritative for liveness.
+Secrets are fetched over an authenticated attempt-scoped HTTPS endpoint only
+after current-attempt and engine ownership checks. They are held in memory,
+provided through a mode-`0600` transient Docker env file, redacted from logs,
+and deleted after container cleanup. They are absent from SQLite, event
+payloads, command lines, and artifact metadata.
 
-## Build Secrets Contract
-
-The control plane passes per-attempt secrets inline on the `job.assign`
-payload under the `secrets` field as a flat `KEY: VALUE` JSON object:
-
-```json
-{
-  "secrets": {
-    "NPM_TOKEN": "npm_xxxxxxxxxxxx",
-    "SENTRY_AUTH_TOKEN": "sntrys_xxxxxxxxxxxx"
-  }
-}
-```
-
-Engine-enforced rules:
-
-- Keys MUST match `[A-Za-z_][A-Za-z0-9_]*`.
-- Values MUST be non-empty strings without newline characters.
-- Secrets are scoped to a single attempt and never reused across attempts.
-- Accepted pairs become container environment variables of the same name.
-- The control plane is responsible for filtering which site/build settings
-  may become build secrets; the engine treats the received map as already
-  scoped to the attempt and enforces only env-name/value safety.
-
-Handling on the engine side is documented in [`design.md`](design.md#build-secrets).
-
-## Network Policy
-
-`NETWORK_FULL` permits public outbound internet for installs/builds. The
-engine still blocks egress to:
-
-- Cloud metadata ranges (`169.254.0.0/16` and provider-specific metadata IPs).
-- RFC1918 ranges.
-- Docker bridge and host gateway.
-- Operator- or control-plane-supplied `network_blocklist` entries.
-
-The control plane may include `network_blocklist` on `job.assign` as either a
-comma-separated string or an array of CIDR/IP strings. Job-level entries are
-added to engine-local operator entries for that attempt.
-
-## Manifest Compatibility
-
-The engine ships an accepted manifest version (see `EngineConfig`
-defaults) and refuses `job.assign` payloads whose required image is not
-present in the accepted manifest. See [`images.md`](images.md) for the
-builder-image manifest contract.
+Artifact upload URLs are checked for HTTPS, approved origin, canonical attempt
+scope, expected size, and expected SHA-256. Redirects are rejected for uploads.

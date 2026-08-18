@@ -37,9 +37,9 @@ class InMemoryCommandHandlers:
         affected: list[str] = []
         for key in tuple(self.attempts):
             if key[0] == build_job_id:
-                self.attempts[key] = "CANCELLED"
+                self.attempts[key] = "CANCELLING"
                 affected.append(key[1])
-        return CommandResult(state="CANCELLED", affected_attempt_ids=tuple(affected))
+        return CommandResult(state="CANCELLING", affected_attempt_ids=tuple(affected))
 
     async def drain(self, payload: dict[str, Any]) -> CommandResult:
         del payload

@@ -1,4 +1,4 @@
-"""Contract snapshot smoke tests."""
+"""Protocol, OpenAPI, and builder-manifest contract smoke tests."""
 
 import importlib.util
 import json
@@ -7,35 +7,14 @@ from typing import Any, cast
 
 import pytest
 
+from build_engine.agent.protocol import INBOUND_MESSAGE_TYPES, OUTBOUND_MESSAGE_TYPES
 from build_engine.config import DEFAULT_IMAGE_MANIFEST_VERSION
-from build_engine.detect.framework import FRAMEWORK_PROFILES
+from build_engine.detect.framework import FRAMEWORK_PROFILES, SUPPORTED_FRAMEWORK_IDS
 
 ROOT = Path(__file__).resolve().parents[1]
-
-# Published build-engine-images manifest snapshot. The v1.0.0 release asset was
-# compared against this file on 2026-05-24 and matched byte-for-byte.
 BUILD_ENGINE_IMAGES_MANIFEST = ROOT / "manifest.json"
 SYNC_CONTRACTS_SCRIPT = ROOT / "scripts" / "sync_contracts.py"
-
-# HTTP routes the engine actually invokes. Discovered by grepping the engine
-# source for `/api/v1/...` and locked here so OpenAPI subset drift is caught.
-# WSS routes (`/api/v1/build-engines/agent/ws`) are validated separately.
-ENGINE_INVOKED_HTTP_ROUTES = {
-    "/api/v1/build-engines/agent/register",
-    "/api/v1/build-engines/agent/sessions",
-    "/api/v1/build-engines/agent/health",
-    "/api/v1/build-engines/agent/metrics",
-    ("/api/v1/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/artifact-upload-url"),
-}
-
-# Framework profile IDs that map to a builder-image entry under a different
-# name in the build-engine-images manifest. Keeps the cross-repo overlap
-# check honest without forcing a rename that has its own follow-up.
-FRAMEWORK_ID_TO_MANIFEST_NAME = {
-    "next-export": "nextjs-export",
-}
-
-EXPECTED_FINAL_IMAGE_FRAMEWORKS = {
+EXPECTED_FRAMEWORKS = {
     "astro",
     "vite",
     "eleventy",
@@ -44,53 +23,49 @@ EXPECTED_FINAL_IMAGE_FRAMEWORKS = {
     "vuepress",
     "gatsby",
     "hugo",
-    "zola",
-    "nextjs-export",
-    "nuxt-generate",
-    "sveltekit-static",
-    "angular-static",
-    "remix-spa",
-    "generic",
+}
+ENGINE_INVOKED_HTTP_ROUTES = {
+    "/api/v2/build-engines/agent/register",
+    "/api/v2/build-engines/agent/sessions",
+    "/api/v2/build-engines/agent/health",
+    "/api/v2/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/artifact-upload-url",
+    "/api/v2/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/secrets",
 }
 
 
-def test_openapi_snapshot_contains_locked_agent_routes() -> None:
-    snapshot = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")
-    paths = snapshot["paths"]
+def test_openapi_snapshot_contains_only_v2_agent_routes() -> None:
+    paths = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")["paths"]
 
-    assert "/api/v1/build-engines/agent/register" in paths
-    assert "/api/v1/build-engines/agent/sessions" in paths
-    assert "/api/v1/build-engines/agent/heartbeats" in paths
-    assert (
-        "/api/v1/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/artifact-upload-url"
-        in paths
+    assert set(paths) >= ENGINE_INVOKED_HTTP_ROUTES
+    assert not any("/api/v1/build-engines/agent" in path for path in paths)
+    assert not any(
+        name in paths
+        for name in (
+            "/api/v2/build-engines/agent/heartbeats",
+            "/api/v2/build-engines/agent/ack",
+        )
     )
-    assert "/api/v1/build-engines/agent/health" in paths
 
 
-def test_openapi_snapshot_contains_locked_component_names() -> None:
-    snapshot = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")
-    schemas = snapshot["components"]["schemas"]
+def test_openapi_snapshot_locks_v2_capabilities_and_commands() -> None:
+    schemas = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")[
+        "components"
+    ]["schemas"]
 
-    assert schemas["BuildEngineStatus"]["enum"] == [
-        "PENDING",
-        "ONLINE",
-        "OFFLINE",
-        "DISABLED",
-        "DRAINING",
-        "QUARANTINED",
-    ]
+    assert schemas["BuildEngineCapabilities"]["properties"]["proto_version"]["const"] == 2
     assert schemas["BuildEngineCommandType"]["enum"] == [
         "job.assign",
-        "cancel",
+        "job.cancel",
         "cache.reset",
         "drain",
+        "ping",
     ]
 
 
 def test_openapi_snapshot_uses_token_only_agent_auth() -> None:
-    snapshot = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")
-    schemas = snapshot["components"]["schemas"]
+    schemas = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")[
+        "components"
+    ]["schemas"]
     register_request = schemas["BuildEngineAgentRegisterRequest"]
     register_response = schemas["BuildEngineAgentRegisterResponse"]
     engine_response = schemas["BuildEngineResponse"]
@@ -100,55 +75,45 @@ def test_openapi_snapshot_uses_token_only_agent_auth() -> None:
     assert "fingerprint" not in engine_response["properties"]
 
 
-def test_protocol_schema_locks_message_types() -> None:
-    schema = _load_json(ROOT / "contracts" / "protocol" / "wss-v1.json")
+def test_protocol_schema_locks_clean_v2_message_types() -> None:
+    schema = _load_json(ROOT / "contracts" / "protocol" / "wss-v2.json")
     message_types = set(schema["properties"]["type"]["enum"])
 
-    assert {"job.assign", "cancel", "cache.reset", "drain"} <= message_types
-    assert {"hello", "heartbeat", "artifact.ready", "job.ack"} <= message_types
+    assert message_types == INBOUND_MESSAGE_TYPES | OUTBOUND_MESSAGE_TYPES
+    assert "job.cancel" in message_types
+    assert "attempt.status" in message_types
+    assert "job.ack" not in message_types
+    assert "status" not in message_types
 
 
-def test_image_manifest_schema_requires_digests() -> None:
+def test_image_manifest_schema_requires_digest_only_execution() -> None:
     schema = _load_json(ROOT / "contracts" / "image-manifest" / "manifest.schema.json")
     image_entry = schema["properties"]["images"]["additionalProperties"]
 
     assert "digest" in image_entry["required"]
-    assert image_entry["properties"]["digest"]["pattern"].startswith("^sha256:")
+    assert image_entry["properties"]["digest"]["pattern"] == "^sha256:[0-9a-f]{64}$"
 
 
 def test_default_image_manifest_version_matches_shipped_manifest() -> None:
     shipped = _load_json(BUILD_ENGINE_IMAGES_MANIFEST).get("version")
-    assert shipped == DEFAULT_IMAGE_MANIFEST_VERSION, (
-        "EngineConfig.image_manifest_version drifted from the build-engine-images "
-        f"manifest: engine={DEFAULT_IMAGE_MANIFEST_VERSION!r}, shipped={shipped!r}"
-    )
+    assert shipped == DEFAULT_IMAGE_MANIFEST_VERSION == "1.0.0"
 
 
-def test_every_framework_profile_appears_in_image_manifest() -> None:
+def test_every_certified_profile_appears_in_image_manifest() -> None:
     manifest = _load_json(BUILD_ENGINE_IMAGES_MANIFEST)
-    advertised: set[str] = set()
-    for entry in manifest.get("images", {}).values():
-        advertised.update(entry.get("frameworks", ()))
+    advertised = {
+        framework
+        for entry in manifest.get("images", {}).values()
+        for framework in entry.get("frameworks", ())
+    }
 
-    missing: list[str] = []
-    for profile_id in FRAMEWORK_PROFILES:
-        if profile_id == "generic":
-            continue
-        manifest_name = FRAMEWORK_ID_TO_MANIFEST_NAME.get(profile_id, profile_id)
-        if manifest_name not in advertised:
-            missing.append(f"{profile_id} (manifest name: {manifest_name})")
-    assert not missing, (
-        "FRAMEWORK_PROFILES entries are not advertised by any builder image: " + ", ".join(missing)
-    )
+    assert set(FRAMEWORK_PROFILES) == SUPPORTED_FRAMEWORK_IDS == EXPECTED_FRAMEWORKS
+    assert advertised == EXPECTED_FRAMEWORKS
 
 
-def test_final_image_manifest_advertises_public_release_framework_matrix() -> None:
-    manifest = _load_json(BUILD_ENGINE_IMAGES_MANIFEST)
-    advertised: set[str] = set()
-    for entry in manifest.get("images", {}).values():
-        advertised.update(entry.get("frameworks", ()))
-
-    assert advertised >= EXPECTED_FINAL_IMAGE_FRAMEWORKS
+def test_manifest_fixture_matches_repo_snapshot() -> None:
+    fixture = _load_json(ROOT / "tests/fixtures/manifests/build-engine-images-v1.0.0.json")
+    assert fixture == _load_json(BUILD_ENGINE_IMAGES_MANIFEST)
 
 
 def test_manifest_url_guard_rejects_version_drift(
@@ -180,10 +145,9 @@ def test_contract_sync_keeps_pinned_snapshot_without_adjacent_coreapp(
 
 
 def test_openapi_subset_covers_every_engine_invoked_http_route() -> None:
-    snapshot = _load_json(ROOT / "contracts" / "openapi" / "build-engine.openapi.json")
-    paths = set(snapshot["paths"])
+    paths = set(_load_json(ROOT / "contracts/openapi/build-engine.openapi.json")["paths"])
     missing = ENGINE_INVOKED_HTTP_ROUTES - paths
-    assert not missing, "Engine HTTP routes missing from the contract OpenAPI subset: " + ", ".join(
+    assert not missing, "Engine HTTP routes missing from the contract: " + ", ".join(
         sorted(missing)
     )
 

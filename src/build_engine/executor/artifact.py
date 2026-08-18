@@ -8,8 +8,10 @@ import json
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Never
 from urllib import error, request
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
+from uuid import UUID
 
 from build_engine.executor.validate import OutputValidationError, validate_output_dir
 
@@ -95,10 +97,12 @@ class ArtifactUploadClient:
         backend_url: str,
         session_jwt: str,
         timeout_seconds: float = 60.0,
+        allow_insecure_localhost: bool = False,
     ) -> None:
         self.backend_url = backend_url.rstrip("/")
         self.session_jwt = session_jwt
         self.timeout_seconds = timeout_seconds
+        self.allow_insecure_localhost = allow_insecure_localhost
 
     def request_upload_url(
         self,
@@ -109,8 +113,10 @@ class ArtifactUploadClient:
     ) -> UploadTicket:
         """Request a presigned artifact upload URL from coreapp."""
 
+        _require_uuid(build_job_id, "build_job_id")
+        _require_uuid(attempt_id, "attempt_id")
         path = (
-            "/api/v1/build-engines/agent/jobs/"
+            "/api/v2/build-engines/agent/jobs/"
             f"{quote(build_job_id)}/attempts/{quote(attempt_id)}/artifact-upload-url"
         )
         body = json.dumps(
@@ -139,7 +145,12 @@ class ArtifactUploadClient:
             raise ArtifactUploadError(f"Artifact upload URL request failed: {exc}") from exc
         if not isinstance(decoded, dict):
             raise ArtifactError("Artifact upload URL response was not a JSON object")
-        return _upload_ticket_from_payload(decoded)
+        ticket = _upload_ticket_from_payload(decoded)
+        _validate_upload_url(
+            ticket.upload_url,
+            allow_insecure_localhost=self.allow_insecure_localhost,
+        )
+        return ticket
 
     def upload(self, ticket: UploadTicket, artifact: ArtifactPackage) -> None:
         """PUT the artifact bytes to a presigned staging-storage URL."""
@@ -154,7 +165,8 @@ class ArtifactUploadClient:
             },
         )
         try:
-            with request.urlopen(req, timeout=self.timeout_seconds) as response:  # nosec B310
+            opener = request.build_opener(_NoRedirectHandler())
+            with opener.open(req, timeout=self.timeout_seconds) as response:  # nosec B310
                 response.read()
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -189,3 +201,41 @@ def _upload_ticket_from_payload(payload: dict[object, object]) -> UploadTicket:
     if not isinstance(storage_key, str) or not storage_key:
         raise ArtifactError("Artifact upload URL response missing storage_key")
     return UploadTicket(upload_url=upload_url, expires_at=expires_at, storage_key=storage_key)
+
+
+def _validate_upload_url(value: str, *, allow_insecure_localhost: bool = False) -> None:
+    parsed = urlparse(value)
+    if not parsed.netloc:
+        raise ArtifactUploadError("Artifact upload URL must include a host")
+    if parsed.scheme == "https":
+        return
+    if (
+        allow_insecure_localhost
+        and parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    ):
+        return
+    raise ArtifactUploadError("Artifact upload URL must be an HTTPS URL")
+
+
+def _require_uuid(value: str, name: str) -> None:
+    try:
+        parsed = UUID(value)
+    except (ValueError, AttributeError) as exc:
+        raise ArtifactUploadError(f"{name} must be a canonical UUID") from exc
+    if str(parsed) != value:
+        raise ArtifactUploadError(f"{name} must be a canonical UUID")
+
+
+class _NoRedirectHandler(request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> Never:
+        del req, fp, code, msg, headers, newurl
+        raise ArtifactUploadError("Artifact upload URL returned an unexpected redirect")

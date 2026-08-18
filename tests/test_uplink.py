@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -75,10 +76,10 @@ def engine_material(tmp_path: Path) -> tuple[Any, EngineCredentials]:
 def test_websocket_url_converts_backend_base_url() -> None:
     assert (
         websocket_url("https://agent.example")
-        == "wss://agent.example/api/v1/build-engines/agent/ws"
+        == "wss://agent.example/api/v2/build-engines/agent/ws"
     )
     assert websocket_url("http://localhost:8000/base") == (
-        "ws://localhost:8000/base/api/v1/build-engines/agent/ws"
+        "ws://localhost:8000/base/api/v2/build-engines/agent/ws"
     )
 
 
@@ -92,7 +93,7 @@ def test_uplink_headers_include_auth_and_protocol(
     assert headers["Authorization"] == "Bearer session-token"
     from build_engine.config import DEFAULT_IMAGE_MANIFEST_VERSION
 
-    assert headers["X-Build-Engine-Proto"] == "1"
+    assert headers["X-Build-Engine-Proto"] == "2"
     assert headers["X-Image-Manifest-Version"] == DEFAULT_IMAGE_MANIFEST_VERSION
 
 
@@ -128,16 +129,25 @@ async def _connect_once_negotiates_hello_handles_ping_and_assignment(
     websocket = FakeWebSocket(
         [
             welcome.to_json(),
-            new_envelope("ping").to_json(),
+            new_envelope("ping", engine_id=credentials.engine_id).to_json(),
             new_envelope(
                 "job.assign",
                 {"build_job_id": build_job_id, "attempt_id": attempt_id},
                 build_job_id=build_job_id,
                 attempt_id=attempt_id,
+                engine_id=credentials.engine_id,
             ).to_json(),
-            new_envelope("cancel", {"build_job_id": build_job_id}).to_json(),
-            new_envelope("cache.reset", {"site_id": None}).to_json(),
-            new_envelope("drain").to_json(),
+            new_envelope(
+                "job.cancel",
+                {"build_job_id": build_job_id},
+                engine_id=credentials.engine_id,
+            ).to_json(),
+            new_envelope(
+                "cache.reset",
+                {"site_id": None},
+                engine_id=credentials.engine_id,
+            ).to_json(),
+            new_envelope("drain", engine_id=credentials.engine_id).to_json(),
             None,
         ]
     )
@@ -147,7 +157,7 @@ async def _connect_once_negotiates_hello_handles_ping_and_assignment(
         url: str,
         headers: Mapping[str, str],
     ) -> WebSocketLike:
-        assert url == "wss://agent.example/api/v1/build-engines/agent/ws"
+        assert url == "wss://agent.example/api/v2/build-engines/agent/ws"
         assert headers["Authorization"] == "Bearer session-token"
         return websocket
 
@@ -162,9 +172,9 @@ async def _connect_once_negotiates_hello_handles_ping_and_assignment(
     await uplink.connect_once()
 
     sent_types = [message["type"] for message in websocket.sent]
-    assert sent_types == ["hello", "pong", "job.ack", "job.ack"]
+    assert sent_types == ["hello", "pong", "attempt.status", "attempt.status"]
     assert websocket.sent[-2]["payload"]["state"] == "ASSIGNED"
-    assert websocket.sent[-1]["payload"]["state"] == "CANCELLED"
+    assert websocket.sent[-1]["payload"]["phase"] == "CANCELLING"
     assert handlers.draining is True
     assert handlers.cache_reset_scopes == [None]
 
@@ -200,7 +210,7 @@ async def _event_spool_replays_from_backend_last_seq(
     spool = EventSpool(tmp_path / "events.jsonl")
     await spool.append(
         new_envelope(
-            "status",
+            "attempt.status",
             {"phase": "PREPARING"},
             build_job_id=build_job_id,
             attempt_id=attempt_id,
@@ -209,7 +219,7 @@ async def _event_spool_replays_from_backend_last_seq(
     )
     await spool.append(
         new_envelope(
-            "status",
+            "attempt.status",
             {"phase": "BUILDING"},
             build_job_id=build_job_id,
             attempt_id=attempt_id,
@@ -239,7 +249,7 @@ async def _event_spool_replays_from_backend_last_seq(
 
     await uplink.connect_once()
 
-    assert [message["type"] for message in websocket.sent] == ["hello", "status"]
+    assert [message["type"] for message in websocket.sent] == ["hello", "attempt.status"]
     assert websocket.sent[-1]["seq"] == 2
     assert websocket.sent[-1]["payload"]["phase"] == "BUILDING"
 
@@ -319,11 +329,12 @@ def _welcome(
         "welcome",
         {
             "engine_id": engine_id,
-            "server_time": "2030-01-01T00:00:00Z",
-            "proto_negotiated": 1,
+            "server_time": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "proto_negotiated": 2,
             "heartbeat_interval_seconds": heartbeat_interval_seconds,
             "last_seq": last_seq or {},
         },
+        engine_id=engine_id,
     )
 
 
@@ -332,8 +343,9 @@ def _welcome_without_interval(engine_id: str) -> Envelope:
         "welcome",
         {
             "engine_id": engine_id,
-            "server_time": "2030-01-01T00:00:00Z",
-            "proto_negotiated": 1,
+            "server_time": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "proto_negotiated": 2,
             "last_seq": {},
         },
+        engine_id=engine_id,
     )

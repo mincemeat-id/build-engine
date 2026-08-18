@@ -28,6 +28,7 @@ class SQLiteCommandHandlers:
     async def assign(self, payload: dict[str, Any]) -> CommandResult:
         """Persist an idempotent assignment."""
 
+        self.draining = _drain_marker_path(self.store).exists()
         if self.draining:
             return CommandResult(accepted=False, state="FAILED", detail="Engine is draining")
         result = self.store.enqueue(payload)
@@ -37,12 +38,14 @@ class SQLiteCommandHandlers:
         """Mark all local attempts for a build job cancelled."""
 
         build_job_id = _required_payload_str(payload, "build_job_id")
-        affected: list[str] = []
-        for job in self.store.jobs_for_build(build_job_id):
-            if job.state not in {"SUCCEEDED", "FAILED", "CANCELLED"}:
-                self.store.transition(attempt_id=job.attempt_id, state="CANCELLED")
-                affected.append(job.attempt_id)
-        return CommandResult(state="CANCELLED", affected_attempt_ids=tuple(affected))
+        attempt_id = payload.get("attempt_id")
+        if attempt_id is not None and not isinstance(attempt_id, str):
+            raise ProtocolError("cancel attempt_id must be a string")
+        affected = self.store.request_cancel(
+            build_job_id=build_job_id,
+            attempt_id=attempt_id,
+        )
+        return CommandResult(state="CANCELLING", affected_attempt_ids=affected)
 
     async def drain(self, payload: dict[str, Any]) -> CommandResult:
         """Stop accepting new assignments."""
@@ -51,6 +54,14 @@ class SQLiteCommandHandlers:
         self.draining = True
         _write_drain_marker(_drain_marker_path(self.store))
         return CommandResult(state="DRAINING")
+
+    async def resume(self, payload: dict[str, Any]) -> CommandResult:
+        """Resume accepting assignments after a local drain."""
+
+        del payload
+        self.draining = False
+        _drain_marker_path(self.store).unlink(missing_ok=True)
+        return CommandResult(state="READY")
 
     async def cache_reset(self, payload: dict[str, Any]) -> CommandResult:
         """Reset the requested local cache scope."""
@@ -82,4 +93,6 @@ def _write_drain_marker(path: Path) -> None:
         "draining": True,
         "updated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
     }
-    path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    temporary.replace(path)

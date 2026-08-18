@@ -45,7 +45,7 @@ def test_doctor_json_reports_missing_credentials(
     def fake_doctor(*_args: object, **_kwargs: object) -> DoctorReport:
         return DoctorReport(
             version=__version__,
-            protocol_version=1,
+            protocol_version=2,
             status="error",
             checks=(
                 DoctorCheck(
@@ -71,7 +71,7 @@ def test_doctor_json_reports_missing_credentials(
     assert exit_code == 1
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
-    assert payload["protocol_version"] == 1
+    assert payload["protocol_version"] == 2
     assert payload["status"] == "error"
     assert payload["checks"][0]["name"] == "credentials"
 
@@ -84,7 +84,7 @@ def test_doctor_human_output(
     def fake_doctor(*_args: object, **_kwargs: object) -> DoctorReport:
         return DoctorReport(
             version=__version__,
-            protocol_version=1,
+            protocol_version=2,
             status="ok",
             checks=(DoctorCheck(name="version", status="ok", detail="build-engine ready"),),
         )
@@ -107,7 +107,7 @@ def test_doctor_human_output(
     assert "- version: OK" in captured.out
 
 
-def test_doctor_accepts_network_blocklist_flag(
+def test_doctor_reports_unrestricted_builder_network(
     capsys: CaptureFixture[str],
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -119,9 +119,9 @@ def test_doctor_accepts_network_blocklist_flag(
         captured_config = config
         return DoctorReport(
             version=__version__,
-            protocol_version=1,
+            protocol_version=2,
             status="ok",
-            checks=(DoctorCheck(name="network_guard", status="ok", detail="ready"),),
+            checks=(DoctorCheck(name="builder_network", status="ok", detail="unrestricted"),),
         )
 
     monkeypatch.setattr("build_engine.cli.commands.run_doctor", fake_doctor)
@@ -133,15 +133,12 @@ def test_doctor_accepts_network_blocklist_flag(
             str(tmp_path / "missing.toml"),
             "--credentials",
             str(tmp_path / "credentials.toml"),
-            "--network-blocklist",
-            "203.0.113.0/24,198.51.100.7",
         ]
     )
 
     assert exit_code == 0
     assert captured_config is not None
-    assert captured_config.network_blocklist == ("203.0.113.0/24", "198.51.100.7")
-    assert "network_guard" in capsys.readouterr().out
+    assert "builder_network" in capsys.readouterr().out
 
 
 def test_serve_reports_missing_credentials(
@@ -192,7 +189,7 @@ def test_serve_runs_startup_self_test_and_accepts_dev_flags(
         captured_skips = raw_skips
         return DoctorReport(
             version=__version__,
-            protocol_version=1,
+            protocol_version=2,
             status="ok",
             checks=(DoctorCheck(name="startup", status="ok", detail="ready"),),
         )
@@ -214,14 +211,12 @@ def test_serve_runs_startup_self_test_and_accepts_dev_flags(
             str(credentials_path),
             "--state-dir",
             str(state_dir),
-            "--no-network-guard",
         ]
     )
 
     assert exit_code == 0
     assert captured_config is not None
     assert captured_config.state_dir == state_dir
-    assert captured_config.network_guard_enabled is False
     assert captured_skips == ("image_pull", "wss_handshake")
     assert "starting uplink" in capsys.readouterr().err
 
@@ -255,7 +250,7 @@ def test_doctor_accepts_skip_flag(
         captured_skips = raw_skips
         return DoctorReport(
             version=__version__,
-            protocol_version=1,
+            protocol_version=2,
             status="ok",
             checks=(DoctorCheck(name="image_pull", status="skip", detail="skipped"),),
         )

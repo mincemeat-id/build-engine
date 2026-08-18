@@ -8,11 +8,12 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import urlparse, urlunparse
+from uuid import UUID
 
 import websockets
 
 from build_engine import __version__
-from build_engine.agent.auth import client_headers_for_credentials
+from build_engine.agent.auth import BuildEngineAuthClient, client_headers_for_credentials
 from build_engine.agent.heartbeat import HeartbeatSnapshot, idle_heartbeat
 from build_engine.agent.protocol import (
     INBOUND_MESSAGE_TYPES,
@@ -27,7 +28,7 @@ from build_engine.agent.protocol import (
 from build_engine.config import EngineConfig, EngineCredentials, config_capabilities
 from build_engine.metrics.collector import MetricsCollector
 
-AGENT_WS_PATH = "/api/v1/build-engines/agent/ws"
+AGENT_WS_PATH = "/api/v2/build-engines/agent/ws"
 
 
 class WebSocketLike(Protocol):
@@ -162,6 +163,7 @@ class BuildEngineUplink:
     async def connect_once(self) -> None:
         """Open one websocket connection and run it until closed."""
 
+        await self._refresh_credentials()
         if not self.credentials.backend_url and not self.config.backend_url:
             raise ProtocolError("backend_url is required for uplink")
         backend_url = self.credentials.backend_url or self.config.backend_url
@@ -201,13 +203,19 @@ class BuildEngineUplink:
             envelope = new_envelope(
                 message_type,
                 payload,
+                engine_id=self.credentials.engine_id,
                 build_job_id=build_job_id,
                 attempt_id=attempt_id,
                 seq=seq,
             )
             await self.event_spool.append(envelope)
             if self._ws is not None:
-                await self._ws.send(envelope.to_json())
+                try:
+                    await self._ws.send(envelope.to_json())
+                except Exception:
+                    # The event is already durable in the outbox. Let the
+                    # reconnect loop replay it instead of rerunning the job.
+                    self._ws = None
             return envelope
 
     async def _receive_welcome(self, websocket: WebSocketLike) -> Envelope:
@@ -220,6 +228,8 @@ class BuildEngineUplink:
         if welcome.type != "welcome":
             raise ProtocolError("First backend frame must be welcome")
         payload = welcome.payload
+        if welcome.engine_id != self.credentials.engine_id:
+            raise ProtocolError("welcome envelope engine_id does not match credentials")
         if payload.get("engine_id") != self.credentials.engine_id:
             raise ProtocolError("welcome engine_id does not match credentials")
         negotiated = payload.get("proto_negotiated")
@@ -238,7 +248,9 @@ class BuildEngineUplink:
             "capabilities": config_capabilities(self.config),
             "max_concurrency": self.config.max_concurrency,
         }
-        await websocket.send(new_envelope("hello", payload).to_json())
+        await websocket.send(
+            new_envelope("hello", payload, engine_id=self.credentials.engine_id).to_json()
+        )
 
     async def _replay_spool(self, websocket: WebSocketLike, welcome: Envelope) -> None:
         cursors = last_sequences(welcome.payload)
@@ -249,20 +261,39 @@ class BuildEngineUplink:
         while True:
             await asyncio.sleep(self._heartbeat_interval_seconds)
             await websocket.send(
-                new_envelope("heartbeat", self.heartbeat_provider().to_payload()).to_json(),
+                new_envelope(
+                    "heartbeat",
+                    self.heartbeat_provider().to_payload(),
+                    engine_id=self.credentials.engine_id,
+                ).to_json(),
             )
 
     async def _handle_frame(self, websocket: WebSocketLike, frame: str | bytes) -> None:
         envelope = decode_frame(frame, allowed_types=INBOUND_MESSAGE_TYPES)
+        if envelope.engine_id != self.credentials.engine_id:
+            raise ProtocolError("Inbound envelope engine_id does not match credentials")
         match envelope.type:
             case "ping":
-                await websocket.send(new_envelope("pong").to_json())
+                await websocket.send(
+                    new_envelope("pong", engine_id=self.credentials.engine_id).to_json()
+                )
             case "job.assign":
                 await self._handle_assign(websocket, envelope)
-            case "cancel":
+            case "job.cancel":
                 await self._handle_cancel(websocket, envelope)
+            case "event.ack":
+                await self._ack_event(envelope)
             case "drain":
-                await self.command_handlers.drain(envelope.payload)
+                action = envelope.payload.get("action", "drain")
+                if action == "resume":
+                    resume = getattr(self.command_handlers, "resume", None)
+                    if resume is None:
+                        raise ProtocolError("Command handler does not support resume")
+                    await resume(envelope.payload)
+                elif action == "drain":
+                    await self.command_handlers.drain(envelope.payload)
+                else:
+                    raise ProtocolError("drain action must be drain or resume")
             case "cache.reset":
                 await self.command_handlers.cache_reset(envelope.payload)
             case "welcome":
@@ -276,7 +307,7 @@ class BuildEngineUplink:
         result = await self.command_handlers.assign(payload)
         state = result.state or ("ASSIGNED" if result.accepted else "FAILED")
         await self.publish_attempt_event(
-            "job.ack",
+            "attempt.status",
             {"build_job_id": build_job_id, "attempt_id": attempt_id, "state": state},
             build_job_id=build_job_id,
             attempt_id=attempt_id,
@@ -285,7 +316,7 @@ class BuildEngineUplink:
 
     async def _handle_cancel(self, websocket: WebSocketLike, envelope: Envelope) -> None:
         result = await self.command_handlers.cancel(envelope.payload)
-        if result.state != "CANCELLED":
+        if not result.affected_attempt_ids and result.state not in {"CANCELLED", "CANCELLING"}:
             return
         build_job_id = _required_payload_str(envelope.payload, "build_job_id")
         explicit_attempt_id = envelope.attempt_id or _optional_payload_str(
@@ -297,12 +328,43 @@ class BuildEngineUplink:
             attempt_ids = (explicit_attempt_id,)
         for attempt_id in attempt_ids:
             await self.publish_attempt_event(
-                "job.ack",
-                {"build_job_id": build_job_id, "attempt_id": attempt_id, "state": "CANCELLED"},
+                "attempt.status",
+                {
+                    "build_job_id": build_job_id,
+                    "attempt_id": attempt_id,
+                    "phase": result.state or "CANCELLING",
+                },
                 build_job_id=build_job_id,
                 attempt_id=attempt_id,
             )
         del websocket
+
+    async def _ack_event(self, envelope: Envelope) -> None:
+        """Compact events acknowledged by the v2 control plane."""
+
+        attempt_id = envelope.attempt_id or envelope.payload.get("attempt_id")
+        last_seq = envelope.payload.get("last_seq")
+        if (
+            not isinstance(attempt_id, str)
+            or not _is_uuid(attempt_id)
+            or not isinstance(last_seq, int)
+            or isinstance(last_seq, bool)
+            or last_seq < 0
+        ):
+            raise ProtocolError("event.ack requires attempt_id and last_seq")
+        ack = getattr(self.event_spool, "ack_through", None)
+        if ack is not None:
+            await ack(attempt_id, last_seq)
+
+    async def _refresh_credentials(self) -> None:
+        """Refresh the short-lived session before each WSS connection."""
+
+        backend_url = self.credentials.backend_url or self.config.backend_url
+        if backend_url is None:
+            return
+        client = BuildEngineAuthClient(backend_url)
+        refreshed = await asyncio.to_thread(client.refresh_session_if_needed, self.credentials)
+        self.credentials = refreshed
 
     async def _sleep_backoff(self, failures: int) -> None:
         with suppress(TimeoutError):
@@ -373,3 +435,11 @@ def _optional_payload_str(payload: dict[str, Any], key: str) -> str | None:
     if not isinstance(value, str) or not value:
         raise ProtocolError(f"payload {key} must be a non-empty string")
     return value
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        parsed = UUID(value)
+    except ValueError, AttributeError:
+        return False
+    return str(parsed) == value

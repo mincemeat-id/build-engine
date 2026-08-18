@@ -1,134 +1,101 @@
 # Mincemeat Build Engine
 
-![Status: V1 GA implementation](https://img.shields.io/badge/status-V1%20GA%20implementation-blue)
+![Status: protocol v2 production candidate](https://img.shields.io/badge/status-protocol%20v2%20production%20candidate-blue)
 ![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
-Standalone Python 3.14 agent for running Mincemeat static-site builds outside
-the control plane (coreapp). The engine connects outbound over WSS, receives
-build attempts, executes them in curated Docker builder images, streams
-status/logs, and uploads staged artifacts back to the platform.
+The build engine is a standalone Python 3.14 agent for Ubuntu 24.04 amd64.
+It connects outbound to coreapp over WSS, accepts build attempts, runs a
+certified static-site build in Docker, and uploads the staged artifact.
 
-## Quick Start
+The current production package is `0.3.0`. Protocol v2 is a clean break: all
+control, status, log, heartbeat, artifact, and acknowledgement traffic uses
+the WSS stream. The HTTP surface is limited to registration, short-lived
+session refresh, attempt-scoped secret retrieval, artifact upload tickets, and
+health.
+
+## Quick start
 
 ```bash
 uv sync
 uv run build-engine --version
 uv run build-engine doctor --json
-make verify
+BUILD_ENGINE_COREAPP_ROOT=../coreapp make verify
 ```
 
-The project targets Python 3.14 or newer and uses:
-
-- `uv` for dependency and environment management.
-- Ruff for linting and formatting.
-- ty for type checking.
-- pytest for tests.
-- pre-commit for local guardrails.
-- PyInstaller for the `--onefile` distribution binary.
-
-Install hooks once per checkout:
+Install the local hooks once per checkout:
 
 ```bash
 make hooks-install
 ```
 
-## Repository Layout
-
-```text
-build-engine/
-├── manifest.json            # Pinned published builder-image manifest snapshot
-├── contracts/              # Imported contract snapshots
-│   ├── image-manifest/     # Builder image manifest JSON Schema
-│   ├── openapi/            # Control-plane build-engine OpenAPI subset
-│   └── protocol/           # WSS protocol envelope schema
-├── docs/                   # Design, protocol, operations, and release docs
-├── packaging/              # Debian, PyInstaller, and systemd assets
-├── scripts/                # Contract sync, install, release tooling
-├── src/build_engine/       # Agent package and CLI
-└── tests/                  # Unit, contract, and integration tests
-```
-
-## Contracts
-
-The repository carries locked contract surfaces:
-
-- `contracts/openapi/build-engine.openapi.json` is the agent's HTTP surface,
-  extracted by `scripts/sync_contracts.py` from the control plane's OpenAPI
-  source. The script expects the control-plane checkout at `../coreapp`.
-- `contracts/protocol/wss-v1.json` captures the WSS envelope and locked
-  message-type names.
-- `contracts/image-manifest/manifest.schema.json` captures the builder image
-  manifest contract from [`docs/images.md`](docs/images.md).
-- `manifest.json` is the pinned published builder-image manifest snapshot that
-  the engine advertises and release validation checks. Keep it at the repo root
-  so release tooling, tests, and operators have a stable, obvious source of
-  truth next to the package metadata.
-
-Refresh the OpenAPI snapshot after a control-plane contract regeneration:
+## Runtime commands
 
 ```bash
-make contracts-sync
-```
+build-engine register \
+  --backend-url https://agent.example.com \
+  --token ONE_TIME_TOKEN \
+  --name build-engine-sfo-1 \
+  --max-concurrency 2
 
-## CLI
-
-The installed command is `build-engine`.
-
-```bash
 build-engine serve
-build-engine register --backend-url https://agent.example.com --token TOKEN --name ENGINE
 build-engine status
 build-engine doctor --json
 build-engine session refresh
-build-engine cache reset --site-id SITE_ID
+build-engine cache reset --site-id SITE_UUID
 build-engine drain
+build-engine resume
 ```
 
-Registration, credential validation, session refresh, WSS uplink, and durable
-queueing are implemented alongside the Docker executor, cache metrics,
-packaging operations, and diagnostics described in the design docs.
+Credentials are written atomically with mode `0600`; runtime state lives under
+`/var/lib/build-engine` by default. Source archives, build outputs, caches,
+and temporary files use this canonical layout:
 
-## Compatibility Matrix
+```text
+<state>/workspaces/<attempt-uuid>/{src,out,cache,tmp}
+```
 
-V1 GA framework support is locked by the design and builder-image contract.
-The default builder-image set advertised at registration is `node:22`,
-`bun:1`, `hugo:latest`, and `zola:latest` — the V1 GA matrix shipped in
-`build-engine-images`.
+Only `out` is packaged.
 
-| Framework | Preferred image | Output directory |
-|-----------|-----------------|------------------|
-| Astro | `node:22` or `bun:1` | `dist/` |
-| Vite | `node:22` or `bun:1` | `dist/` |
-| Eleventy | `node:22` | `_site/` |
-| Docusaurus | `node:22` | `build/` |
-| VitePress | `node:22` | `.vitepress/dist/` |
-| VuePress | `node:22` | `dist/` |
-| Gatsby | `node:22` | `public/` |
-| Hugo | `hugo:latest` | `public/` |
-| Zola | `zola:latest` | `public/` |
-| Next.js static export | `node:22` | `out/` |
-| Nuxt generate | `node:22` | `.output/public/` |
-| SvelteKit static | `node:22` | `build/` |
-| Angular static | `node:22` | `dist/<project>/browser/` |
-| Remix SPA | `node:22` | `build/client/` |
-| Generic | `node:22` | inferred |
+## Certified framework matrix
 
-Angular static and Remix SPA framework profiles ship as opt-in via the
-`framework` override; auto-detection follows the existing dependency- and
-script-marker ordering in `detect/framework.py`.
+The registry is intentionally small and versioned. Compatibility failures are
+execution-blocking; there is no silent generic fallback.
 
-## Documentation
+| Framework | Image | Package manager | Output |
+|-----------|-------|-----------------|--------|
+| Astro | pinned Node 22 | npm or pnpm | `dist/` |
+| Vite | pinned Node 22 | npm or pnpm | `dist/` |
+| Eleventy | pinned Node 22 | npm or pnpm | `_site/` |
+| Docusaurus | pinned Node 22 | npm or pnpm | `build/` |
+| VitePress | pinned Node 22 | npm or pnpm | `docs/.vitepress/dist/` |
+| VuePress | pinned Node 22 | npm or pnpm | `docs/.vuepress/dist/` |
+| Gatsby | pinned Node 22 | npm or pnpm | `public/` |
+| Hugo | pinned Hugo image | none | `public/` |
 
-- [Design](docs/design.md) — agent architecture, queue, executor, cache.
-- [Protocol reference](docs/protocol.md) — WSS envelope, HTTP endpoints,
-  authentication, and build-secret contract.
-- [Builder images](docs/images.md) — curated image matrix and manifest.
-- [Operations](docs/operations.md) — install, upgrade, diagnostics, CI.
-- [Release](docs/release.md) — release pipeline, signing, attestations.
-- [Contributing](CONTRIBUTING.md) — verification gates, hooks, contract
-  refreshes.
-- [Security](SECURITY.md) — supported versions and private vulnerability
-  reporting.
+Bun, Yarn, Zola, Generic, Angular, Remix, Next, Nuxt, and SvelteKit are
+deferred until separately certified. The shipped manifest contains only the
+Node 22 and pinned Hugo entries and every Docker execution uses
+`tag@sha256:digest`.
+
+## Contracts and documentation
+
+- [Design](docs/design.md) — boundaries, state, worker lifecycle, and security.
+- [Protocol](docs/protocol.md) — WSS v2 envelope and HTTP endpoints.
+- [Builder images](docs/images.md) — manifest and certification process.
+- [Operations](docs/operations.md) — installation, drain, recovery, and health.
+- [Release](docs/release.md) — package, signature, and smoke requirements.
+- [Security policy](SECURITY.md) — vulnerability reporting.
+
+`contracts/openapi/build-engine.openapi.json` is generated from the adjacent
+control-plane checkout. Use an explicit checkout when working in an active
+workspace:
+
+```bash
+BUILD_ENGINE_COREAPP_ROOT=/path/to/coreapp-build-engine-v2 make contracts-sync
+```
+
+The WSS contract is [wss-v2.json](contracts/protocol/wss-v2.json), and the
+root `manifest.json` is the immutable builder-manifest snapshot.
 
 ## Verification
 
@@ -136,9 +103,14 @@ script-marker ordering in `detect/framework.py`.
 make verify
 ```
 
-The verification target syncs the OpenAPI contract snapshot, compiles source
-and tests, runs Ruff, ty, Bandit, pytest, and builds/runs the PyInstaller
-smoke binary.
+The gate synchronizes contracts, compiles source and tests, runs Ruff, ty,
+Bandit, pytest, and builds/runs the PyInstaller binary smoke. The complete
+Docker harness is explicit because it pulls the certified images:
+
+```bash
+BUILD_ENGINE_COREAPP_ROOT=/path/to/coreapp-build-engine-v2 \
+  BUILD_ENGINE_DOCKER_INTEGRATION=1 make docker-integration
+```
 
 ## License
 

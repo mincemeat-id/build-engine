@@ -1,6 +1,6 @@
 [project]
 name = "mincemeat-build-engine"
-version = "0.2.0"
+version = "0.3.0"
 description = "Standalone Mincemeat static-site build engine agent."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -38,7 +38,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-build_engine = ["py.typed"]
+build_engine = ["py.typed", "data/*.json"]
 
 [tool.ruff]
 line-length = 100

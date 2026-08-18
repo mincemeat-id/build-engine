@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import os
-import threading
 from datetime import UTC, datetime, timedelta
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
 
-from build_engine.config import EngineCredentials
 from build_engine.executor.cache import (
     cache_size_bytes,
     prepare_site_cache,
     prune_cache,
 )
 from build_engine.metrics.collector import MetricsCollector
-from build_engine.metrics.reporter import MetricsReporter, write_textfile_metrics
+from build_engine.metrics.reporter import write_textfile_metrics
 
 
 def test_prepare_site_cache_reports_hit_and_invalidates_changed_lockfile(tmp_path: Path) -> None:
@@ -136,31 +131,6 @@ def test_metrics_collector_rolls_up_cache_ratio_and_heartbeat() -> None:
     assert heartbeat.to_payload()["disk_free_bytes"] == 99
 
 
-def test_metrics_reporter_posts_openapi_rollup(tmp_path: Path) -> None:
-    del tmp_path
-    credentials = EngineCredentials(
-        engine_id="11111111-1111-1111-1111-111111111111",
-        engine_secret="secret",
-        session_jwt="session-token",
-        session_jwt_expires_at="2030-01-01T00:00:00+00:00",
-        backend_url=None,
-        name="metrics-test",
-    )
-    collector = MetricsCollector(workers_total=2)
-    snapshot = collector.snapshot(queue_depth=1, cache_size_bytes=123)
-    server = _MetricsServer()
-    server.start()
-    try:
-        MetricsReporter(backend_url=server.base_url, credentials=credentials).report(snapshot)
-    finally:
-        server.stop()
-
-    assert server.body["workers_total"] == 2
-    assert server.body["queue_depth"] == 1
-    assert server.body["cache_size_bytes"] == 123
-    assert server.auth_header == "Bearer session-token"
-
-
 def test_textfile_metrics_writer_outputs_prometheus_format(tmp_path: Path) -> None:
     collector = MetricsCollector(workers_total=2)
     collector.job_started()
@@ -175,42 +145,3 @@ def test_textfile_metrics_writer_outputs_prometheus_format(tmp_path: Path) -> No
     assert "build_engine_workers_busy 1" in content
     assert "build_engine_queue_depth 4" in content
     assert "build_engine_cache_size_bytes 512" in content
-
-
-class _MetricsServer:
-    def __init__(self) -> None:
-        handler = _handler_for(self)
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self.body: dict[str, Any] = {}
-        self.auth_header: str | None = None
-
-    @property
-    def base_url(self) -> str:
-        address = self.httpd.server_address
-        host = str(address[0])
-        port = int(address[1])
-        return f"http://{host}:{port}"
-
-    def start(self) -> None:
-        self.thread.start()
-
-    def stop(self) -> None:
-        self.httpd.shutdown()
-        self.thread.join(timeout=5)
-        self.httpd.server_close()
-
-
-def _handler_for(server: _MetricsServer) -> type[BaseHTTPRequestHandler]:
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:
-            length = int(self.headers.get("Content-Length", "0"))
-            server.auth_header = self.headers.get("Authorization")
-            server.body = json.loads(self.rfile.read(length).decode("utf-8"))
-            self.send_response(202)
-            self.end_headers()
-
-        def log_message(self, format: str, *args: object) -> None:
-            del format, args
-
-    return Handler

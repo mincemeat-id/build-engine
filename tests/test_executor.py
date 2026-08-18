@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import os
-import subprocess
 import tarfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,11 +29,6 @@ from build_engine.executor.docker_runner import (
     resolve_image_reference,
     run_container,
 )
-from build_engine.executor.network import (
-    DockerNetworkGuard,
-    ensure_network_guard,
-    normalize_blocklist,
-)
 from build_engine.executor.stream import SecretRedactor, _frame_chunks
 from build_engine.executor.workspace import (
     WorkspaceError,
@@ -43,6 +37,8 @@ from build_engine.executor.workspace import (
     download_source,
     extract_source,
 )
+
+PINNED_TEST_IMAGE = "node:22@sha256:" + ("a" * 64)
 
 
 def test_source_download_verifies_sha256_and_extracts_safely(tmp_path: Path) -> None:
@@ -56,7 +52,7 @@ def test_source_download_verifies_sha256_and_extracts_safely(tmp_path: Path) -> 
     destination = tmp_path / "downloaded.tar.gz"
     extracted = tmp_path / "extracted"
 
-    download_source(archive.as_uri(), destination, expected_sha256=expected)
+    download_source(archive.as_uri(), destination, expected_sha256=expected, allow_file=True)
     extract_source(destination, extracted)
 
     assert (extracted / "index.html").read_text() == "hello"
@@ -95,11 +91,10 @@ def test_package_output_validates_and_hashes_artifact(tmp_path: Path) -> None:
 
 def test_docker_run_args_include_resource_and_hardening_flags(tmp_path: Path) -> None:
     spec = DockerRunSpec(
-        image="node:22",
+        image=PINNED_TEST_IMAGE,
         project_root=tmp_path,
         command="npm ci && npm run build",
         config=EngineConfig(state_dir=tmp_path),
-        network_guard=DockerNetworkGuard(name="build-engine-guard"),
     )
 
     args = docker_run_args(spec)
@@ -112,7 +107,7 @@ def test_docker_run_args_include_resource_and_hardening_flags(tmp_path: Path) ->
     assert "--security-opt" in args
     assert "no-new-privileges" in args
     assert "--network" in args
-    assert args[-4:] == ["node:22", "sh", "-c", "npm ci && npm run build"]
+    assert args[-4:] == [PINNED_TEST_IMAGE, "sh", "-c", "npm ci && npm run build"]
     assert "-lc" not in args
     assert "/var/run/docker.sock" not in " ".join(args)
 
@@ -126,7 +121,6 @@ def test_docker_run_args_mount_final_image_entrypoint_contract(tmp_path: Path) -
         project_root=source_root,
         command="npm ci && npm run build",
         config=EngineConfig(state_dir=tmp_path),
-        network_guard=DockerNetworkGuard(name="none"),
         source_root=source_root,
         output_root=output_root,
         build_manifest={
@@ -148,70 +142,6 @@ def test_docker_run_args_mount_final_image_entrypoint_contract(tmp_path: Path) -
     assert "sh" not in args[-4:]
 
 
-def test_network_guard_creates_bridge_and_installs_drop_rules(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    commands: list[list[str]] = []
-    inspect_payload = json.dumps(
-        [
-            {
-                "Name": "build-engine-guard",
-                "Id": "abcdef1234567890",
-                "Options": {"com.docker.network.bridge.name": "be-guard0"},
-                "IPAM": {"Config": [{"Gateway": "172.31.255.1"}]},
-            }
-        ]
-    )
-    inspect_calls = 0
-
-    def fake_which(binary: str) -> str:
-        return f"/usr/sbin/{binary}"
-
-    def fake_run(
-        command: list[str],
-        **_kwargs: object,
-    ) -> subprocess.CompletedProcess[str]:
-        nonlocal inspect_calls
-        commands.append(command)
-        if command[:3] == ["docker", "network", "inspect"]:
-            inspect_calls += 1
-            if inspect_calls == 1:
-                return subprocess.CompletedProcess(command, 1, "", "not found")
-            return subprocess.CompletedProcess(command, 0, inspect_payload, "")
-        if command[:3] == ["iptables", "-C", "DOCKER-USER"]:
-            return subprocess.CompletedProcess(command, 1, "", "missing")
-        if command[:3] == ["iptables", "-C", "BUILD_ENGINE_GUARD"]:
-            return subprocess.CompletedProcess(command, 1, "", "missing")
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    monkeypatch.setattr("build_engine.executor.network.shutil.which", fake_which)
-    monkeypatch.setattr("build_engine.executor.network.subprocess.run", fake_run)
-
-    guard = ensure_network_guard(blocklist=("203.0.113.0/24",))
-
-    assert guard.name == "build-engine-guard"
-    assert guard.bridge_name == "be-guard0"
-    assert guard.gateway == "172.31.255.1"
-    assert commands[1][:3] == ["docker", "network", "create"]
-    expected_commands = (
-        ["iptables", "-I", "DOCKER-USER", "1", "-i", "be-guard0", "-j", "BUILD_ENGINE_GUARD"],
-        ["iptables", "-I", "BUILD_ENGINE_GUARD", "1", "-d", "169.254.0.0/16", "-j", "DROP"],
-        ["iptables", "-I", "BUILD_ENGINE_GUARD", "1", "-d", "203.0.113.0/24", "-j", "DROP"],
-        ["iptables", "-I", "BUILD_ENGINE_GUARD", "1", "-d", "172.31.255.1/32", "-j", "DROP"],
-    )
-    for expected in expected_commands:
-        assert expected in commands
-
-
-def test_network_blocklist_normalization_rejects_invalid_entries() -> None:
-    assert normalize_blocklist(("203.0.113.7", "203.0.113.0/24")) == (
-        "203.0.113.7/32",
-        "203.0.113.0/24",
-    )
-    with pytest.raises(RuntimeError, match="Invalid network blocklist"):
-        normalize_blocklist(("not-a-cidr",))
-
-
 def test_image_manifest_resolves_tag_to_digest_reference(tmp_path: Path) -> None:
     manifest_path = tmp_path / "manifest.json"
     digest = "sha256:" + "a" * 64
@@ -220,7 +150,7 @@ def test_image_manifest_resolves_tag_to_digest_reference(tmp_path: Path) -> None
             {
                 "version": "1.0.0",
                 "generated_at": "2026-05-21T00:00:00Z",
-                "engine_compat": {"proto_min": 1, "proto_max": 1, "engine_min": "0.1.0"},
+                "engine_compat": {"proto_min": 2, "proto_max": 2, "engine_min": "0.3.0"},
                 "images": {
                     "node22": {
                         "tag": "node:22",
@@ -245,11 +175,10 @@ def test_secret_redactor_replaces_exact_secret_values() -> None:
 
 def test_docker_run_args_uses_env_file_and_keeps_secrets_off_argv(tmp_path: Path) -> None:
     spec = DockerRunSpec(
-        image="node:22",
+        image=PINNED_TEST_IMAGE,
         project_root=tmp_path,
         command="env",
         config=EngineConfig(state_dir=tmp_path),
-        network_guard=DockerNetworkGuard(name="build-engine-guard"),
         secret_env={"MY_SECRET": "s3cret-value", "API_TOKEN": "tok-abc"},
     )
     env_file_path = tmp_path / "env-file"
@@ -316,7 +245,7 @@ async def _run_container_with_fake_docker(tmp_path: Path) -> None:
         logs.append((stream, data))
 
     spec = DockerRunSpec(
-        image="busybox:latest",
+        image=PINNED_TEST_IMAGE,
         project_root=tmp_path,
         command="env",
         config=EngineConfig(
@@ -324,7 +253,6 @@ async def _run_container_with_fake_docker(tmp_path: Path) -> None:
             build_timeout_seconds=10,
             sigterm_grace_seconds=1,
         ),
-        network_guard=DockerNetworkGuard(name="none"),
         secret_env={"MY_SECRET": "super-secret-value"},
     )
 
@@ -345,7 +273,7 @@ def test_log_frame_chunks_stay_under_protocol_byte_limit() -> None:
 
 
 def test_workspace_cleanup_removes_success_and_prunes_failed_retention(tmp_path: Path) -> None:
-    successful = create_workspace(tmp_path, "success")
+    successful = create_workspace(tmp_path, "11111111-1111-1111-1111-111111111111")
     (successful.source_root / "index.html").write_text("ok", encoding="utf-8")
 
     cleanup_workspace(successful)
@@ -353,12 +281,12 @@ def test_workspace_cleanup_removes_success_and_prunes_failed_retention(tmp_path:
     assert not successful.attempt_dir.exists()
 
     for index in range(3):
-        failed = create_workspace(tmp_path, f"failed-{index}")
+        failed = create_workspace(tmp_path, f"22222222-2222-2222-2222-{index + 1:012d}")
         cleanup_workspace(failed, retain_failed=True, failed_keep=2)
 
-    retained = sorted(path.name for path in (tmp_path / "jobs").iterdir())
+    retained = sorted(path.name for path in (tmp_path / "workspaces").iterdir())
     assert len(retained) == 2
-    assert "failed-0" not in retained
+    assert "22222222-2222-2222-2222-000000000001" not in retained
 
 
 def test_workspace_prune_uses_marker_mtime_not_attempt_dir_mtime(tmp_path: Path) -> None:
@@ -367,7 +295,7 @@ def test_workspace_prune_uses_marker_mtime_not_attempt_dir_mtime(tmp_path: Path)
 
     failures: list[Path] = []
     for index in range(3):
-        failed = create_workspace(tmp_path, f"failed-{index}")
+        failed = create_workspace(tmp_path, f"33333333-3333-3333-3333-{index + 1:012d}")
         cleanup_workspace(failed, retain_failed=True, failed_keep=10)
         failures.append(failed.attempt_dir)
 
@@ -381,25 +309,25 @@ def test_workspace_prune_uses_marker_mtime_not_attempt_dir_mtime(tmp_path: Path)
     # Now simulate a stale nested write into the *oldest* attempt dir that
     # would bump its directory mtime above the newer attempts'. The marker
     # mtime must still drive pruning order.
-    stale_child = failures[0] / "workspace" / "stale.txt"
+    stale_child = failures[0] / "src" / "stale.txt"
     stale_child.parent.mkdir(parents=True, exist_ok=True)
     stale_child.write_text("noise", encoding="utf-8")
     now = 1_800_000_000
     os.utime(failures[0], (now, now))
 
     # Trigger a prune that keeps only the two newest failures by marker mtime.
-    trigger = create_workspace(tmp_path, "failed-trigger")
+    trigger = create_workspace(tmp_path, "44444444-4444-4444-4444-000000000001")
     trigger_marker_ts = 1_700_000_000 + 3 * 100
     cleanup_workspace(trigger, retain_failed=True, failed_keep=2)
     os.utime(trigger.attempt_dir / "FAILED", (trigger_marker_ts, trigger_marker_ts))
     # Re-run prune with the marker timestamp set so ordering is deterministic.
     cleanup_workspace(trigger, retain_failed=True, failed_keep=2)
 
-    retained = {path.name for path in (tmp_path / "jobs").iterdir()}
-    assert "failed-0" not in retained
-    assert "failed-1" not in retained
-    assert "failed-2" in retained
-    assert "failed-trigger" in retained
+    retained = {path.name for path in (tmp_path / "workspaces").iterdir()}
+    assert "33333333-3333-3333-3333-000000000001" not in retained
+    assert "33333333-3333-3333-3333-000000000002" not in retained
+    assert "33333333-3333-3333-3333-000000000003" in retained
+    assert "44444444-4444-4444-4444-000000000001" in retained
 
 
 def test_site_cache_maps_package_manager_mounts_and_reset(tmp_path: Path) -> None:
@@ -426,6 +354,7 @@ def test_artifact_upload_client_requests_url_and_puts_bytes(tmp_path: Path) -> N
             backend_url=server.base_url,
             session_jwt="session-token",
             timeout_seconds=5,
+            allow_insecure_localhost=True,
         )
         artifact = package_output(
             project_root=_project_with_output(tmp_path),
@@ -464,10 +393,10 @@ async def _docker_runner_integration_smoke(tmp_path: Path) -> None:
     async def publish(stream: str, data: str) -> None:
         logs.append((stream, data))
 
-    await asyncio.to_thread(pull_image, "busybox:latest", timeout_seconds=120)
+    await asyncio.to_thread(pull_image, PINNED_TEST_IMAGE, timeout_seconds=120)
     result = await run_container(
         DockerRunSpec(
-            image="busybox:latest",
+            image=PINNED_TEST_IMAGE,
             project_root=tmp_path,
             command="mkdir -p dist && echo ok > dist/index.html",
             config=EngineConfig(
@@ -475,49 +404,12 @@ async def _docker_runner_integration_smoke(tmp_path: Path) -> None:
                 build_timeout_seconds=30,
                 sigterm_grace_seconds=1,
             ),
-            network_guard=DockerNetworkGuard(name="none"),
         ),
         publish_log=publish,
     )
 
     assert result.exit_code == 0
     assert (tmp_path / "dist" / "index.html").read_text().strip() == "ok"
-
-
-@pytest.mark.skipif(
-    os.environ.get("BUILD_ENGINE_DOCKER_TESTS") != "1",
-    reason="real Docker smoke is opt-in to avoid pulling images during default verify",
-)
-def test_network_guard_blocks_metadata_endpoint_with_real_docker(tmp_path: Path) -> None:
-    del tmp_path
-    guard = ensure_network_guard()
-    image = "curlimages/curl:8.10.1"
-    pull_image(image, timeout_seconds=120)
-
-    result = subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            guard.name,
-            "--entrypoint",
-            "curl",
-            image,
-            "-fsS",
-            "--connect-timeout",
-            "1",
-            "--max-time",
-            "2",
-            "http://169.254.169.254/",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-
-    assert result.returncode != 0
 
 
 class _BytesReader:

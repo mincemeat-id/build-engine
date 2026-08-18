@@ -34,11 +34,13 @@ class FakeRegistrationClient(BuildEngineAuthClient):
         registration_token: str,
         name: str,
         capabilities: dict[str, object],
+        version: str,
     ) -> dict[str, object]:
         self.last_payload = {
             "registration_token": registration_token,
             "name": name,
             "capabilities": capabilities,
+            "version": version,
         }
         return {
             "engine_id": "11111111-1111-1111-1111-111111111111",
@@ -136,6 +138,7 @@ def test_register_engine_generates_and_persists_credentials(tmp_path: Path) -> N
     assert client.last_payload is not None
     assert client.last_payload["registration_token"] == "one-time-token"
     assert client.last_payload["name"] == "test-engine"
+    assert client.last_payload["version"] == "0.3.0"
 
 
 def test_refresh_session_updates_expired_persisted_token(tmp_path: Path) -> None:

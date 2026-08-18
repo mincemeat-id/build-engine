@@ -12,6 +12,7 @@ class QueueLease:
     owner: str
     job: JobRecord
     visibility_timeout_seconds: int
+    token: str
 
     def refresh(self, store: SQLiteQueueStore) -> JobRecord:
         """Extend this lease and return the refreshed job record."""
@@ -20,6 +21,7 @@ class QueueLease:
             attempt_id=self.job.attempt_id,
             lease_owner=self.owner,
             visibility_timeout_seconds=self.visibility_timeout_seconds,
+            lease_token=self.token,
         )
 
 
@@ -41,4 +43,5 @@ def acquire_queue_lease(
         owner=owner,
         job=job,
         visibility_timeout_seconds=visibility_timeout_seconds,
+        token=job.lease_token or "",
     )

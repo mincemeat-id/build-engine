@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "generated_at": "2026-08-13T00:00:00Z",
+  "images": {
+    "node:22": {
+      "tag": "ghcr.io/mincemeat-id/build-engine-images/node:22-1.0.0",
+      "digest": "sha256:c3563576cdfaa94d29a137aedf90e607971c82d22d01a34a5e4cae88730cfe42",
+      "frameworks": [
+        "astro",
+        "vite",
+        "eleventy",
+        "docusaurus",
+        "vitepress",
+        "vuepress",
+        "gatsby"
+      ]
+    },
+    "hugo:latest": {
+      "tag": "ghcr.io/mincemeat-id/build-engine-images/hugo:1.0.0",
+      "digest": "sha256:550a2c39fee101bd38d850a39743788416c4e7499b9f62c94d1ef309b85703c6",
+      "frameworks": ["hugo"]
+    }
+  },
+  "engine_compat": {
+    "proto_min": 2,
+    "proto_max": 2,
+    "engine_min": "0.3.0"
+  }
+}

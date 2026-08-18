@@ -26,7 +26,7 @@ from build_engine.detect.lockfiles import (
 )
 from build_engine.detect.package_json import PackageJson, load_package_json
 
-SUPPORTED_NODE_MAJORS = (20, 22)
+SUPPORTED_NODE_MAJORS = (22,)
 GENERIC_OUTPUT_CANDIDATES = ("out", "dist", "build", "public", "_site", ".output/public")
 
 
@@ -36,7 +36,7 @@ class DetectionError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class FrameworkProfile:
-    """Static-site framework profile shipped in v1 GA."""
+    """Versioned static-site framework profile."""
 
     id: str
     name: str
@@ -89,14 +89,11 @@ class BuildPlan:
         return self.compatibility.guidance
 
     def to_job_payload_fields(self) -> dict[str, object]:
-        """Return the fields that mirror the backend job.assign contract."""
+        """Return safe profile metadata for an attempt status event."""
 
         return {
             "framework_id": self.framework_id,
             "package_manager": self.package_manager,
-            "image": self.image,
-            "build_command": self.build_command,
-            "output_dir": self.output_dir,
             "detected_output_dir": self.detected_output_dir,
         }
 
@@ -165,72 +162,28 @@ FRAMEWORK_PROFILES: dict[str, FrameworkProfile] = {
         name="Hugo",
         default_command="hugo",
         output_dir="public",
-        config_markers=("hugo.toml", "hugo.yaml", "hugo.json", "config.toml"),
+        config_markers=("hugo.toml", "hugo.yaml", "hugo.json"),
         node_based=False,
-    ),
-    "next-export": FrameworkProfile(
-        id="next-export",
-        name="Next.js static export",
-        default_command="next build",
-        output_dir="out",
-        dependency_markers=("next",),
-        script_markers=("next build",),
-    ),
-    "nuxt-generate": FrameworkProfile(
-        id="nuxt-generate",
-        name="Nuxt generate",
-        default_command="nuxi generate",
-        output_dir=".output/public",
-        dependency_markers=("nuxt",),
-        script_markers=("nuxi generate", "nuxt generate", "nuxi build", "nuxt build"),
-    ),
-    "sveltekit-static": FrameworkProfile(
-        id="sveltekit-static",
-        name="SvelteKit static",
-        default_command="vite build",
-        output_dir="build",
-        dependency_markers=("@sveltejs/kit",),
-        script_markers=("svelte-kit build",),
-        config_markers=("svelte.config.js", "svelte.config.mjs", "svelte.config.ts"),
-    ),
-    "zola": FrameworkProfile(
-        id="zola",
-        name="Zola",
-        default_command="zola build",
-        output_dir="public",
-        config_markers=("config.toml",),
-        node_based=False,
-    ),
-    "angular-static": FrameworkProfile(
-        id="angular-static",
-        name="Angular static",
-        default_command="ng build --configuration production",
-        output_dir="dist",
-        dependency_markers=("@angular/core",),
-        script_markers=("ng build",),
-        config_markers=("angular.json",),
-    ),
-    "remix-spa": FrameworkProfile(
-        id="remix-spa",
-        name="Remix SPA",
-        default_command="remix vite:build",
-        output_dir="build/client",
-        dependency_markers=("@remix-run/dev",),
-        script_markers=("remix vite:build", "remix build"),
-    ),
-    "generic": FrameworkProfile(
-        id="generic",
-        name="Generic",
-        default_command="",
-        output_dir=None,
     ),
 }
 
+SUPPORTED_FRAMEWORK_IDS = frozenset(FRAMEWORK_PROFILES)
+DEFERRED_FRAMEWORK_IDS = frozenset(
+    {
+        "bun",
+        "yarn",
+        "zola",
+        "generic",
+        "angular",
+        "remix",
+        "next",
+        "nuxt",
+        "sveltekit",
+    }
+)
+
 DETECTION_ORDER = (
     "astro",
-    "next-export",
-    "nuxt-generate",
-    "sveltekit-static",
     "docusaurus",
     "vitepress",
     "vuepress",
@@ -249,7 +202,7 @@ def plan_build(
     detected_output_dir: str | None = None,
     node_version: str | int | None = None,
 ) -> BuildPlan:
-    """Detect a project and return the executable v1 build plan."""
+    """Detect a project and return a certified v2 build plan."""
 
     project_root = Path(root)
     package_json = load_package_json(project_root)
@@ -259,26 +212,42 @@ def plan_build(
         package_json=package_json,
         framework_override=framework_override,
     )
+    if framework.profile.node_based and pm_detection.manager not in {"npm", "pnpm"}:
+        raise DetectionError("Only npm and pnpm are certified for Node-based profiles")
+    selected_package_manager: PackageManager = (
+        pm_detection.manager if framework.profile.node_based else "none"
+    )
     node_selection = (
-        select_node_version(package_json, override=node_version)
-        if framework.profile.node_based and pm_detection.manager != "bun"
+        select_node_version(package_json, override=node_version, supported=SUPPORTED_NODE_MAJORS)
+        if framework.profile.node_based
         else None
     )
-    image = _select_image(framework.profile, pm_detection.manager, node_selection)
-    compatibility = check_static_compatibility(project_root, framework.profile.id, package_json)
-    resolved_output_dir = output_dir or detected_output_dir or framework.profile.output_dir
+    image = _select_image(framework.profile, node_selection)
+    compatibility = check_static_compatibility(
+        project_root,
+        framework.profile.id,
+        package_json,
+        supported_frameworks=SUPPORTED_FRAMEWORK_IDS,
+    )
+    selected_build_command = build_command or _default_build_command(
+        framework.profile, pm_detection, package_json
+    )
+    resolved_output_dir = (
+        output_dir
+        or detected_output_dir
+        or _profile_output_dir(framework.profile, selected_build_command)
+    )
     return BuildPlan(
         root=project_root,
         framework_id=framework.profile.id,
-        package_manager=pm_detection.manager,
-        package_manager_source=pm_detection.source,
+        package_manager=selected_package_manager,
+        package_manager_source=pm_detection.source if framework.profile.node_based else "profile",
         install_command=install_command(
-            pm_detection.manager,
+            selected_package_manager,
             root=project_root,
             detection=pm_detection,
         ),
-        build_command=build_command
-        or _default_build_command(framework.profile, pm_detection, package_json),
+        build_command=selected_build_command,
         output_dir=resolved_output_dir,
         detected_output_dir=detected_output_dir,
         image=image,
@@ -293,23 +262,29 @@ def detect_framework(
     package_json: PackageJson | None = None,
     framework_override: str | None = None,
 ) -> FrameworkDetection:
-    """Detect one of the v1 GA framework profiles."""
+    """Detect one framework profile from the versioned registry."""
 
     project_root = Path(root)
     package_json = package_json if package_json is not None else load_package_json(project_root)
     if framework_override:
         profile = FRAMEWORK_PROFILES.get(framework_override)
         if profile is None:
+            if framework_override in DEFERRED_FRAMEWORK_IDS:
+                raise DetectionError(
+                    f"Framework {framework_override!r} is deferred and not certified "
+                    "for this release"
+                )
             raise DetectionError(f"Unknown framework override: {framework_override}")
         return FrameworkDetection(profile=profile, source="override")
 
     hugo_profile = FRAMEWORK_PROFILES["hugo"]
     if _has_config_marker(project_root, ("hugo.toml", "hugo.yaml", "hugo.json")):
         return FrameworkDetection(profile=hugo_profile, source="config")
-    if package_json is None and (project_root / "config.toml").exists():
-        return FrameworkDetection(profile=hugo_profile, source="config")
-
     if package_json is not None:
+        if package_json.has_dependency("next", "nuxt", "@sveltejs/kit", "@angular/core"):
+            raise DetectionError(
+                "Detected a deferred framework; this release supports only the curated eight"
+            )
         for profile_id in DETECTION_ORDER:
             profile = FRAMEWORK_PROFILES[profile_id]
             if package_json.has_dependency(*profile.dependency_markers):
@@ -320,10 +295,8 @@ def detect_framework(
                 _script_contains_command(package_json, marker) for marker in profile.script_markers
             ):
                 return FrameworkDetection(profile=profile, source="script")
-        if package_json.script("build") is not None:
-            return FrameworkDetection(profile=FRAMEWORK_PROFILES["generic"], source="build-script")
 
-    raise DetectionError("No supported static-site framework or Generic build script was detected")
+    raise DetectionError("No certified static-site framework was detected")
 
 
 def select_node_version(
@@ -355,7 +328,7 @@ def select_node_version(
 
 
 def infer_generic_output(root: Path | str) -> str:
-    """Infer Generic output using the v1 candidate order."""
+    """Infer output for migration tooling; Generic is not a production profile."""
 
     project_root = Path(root)
     for candidate in GENERIC_OUTPUT_CANDIDATES:
@@ -377,28 +350,20 @@ def _default_build_command(
         script_name = _preferred_script(profile, package_json)
         if script_name is not None:
             return run_script_command(pm_detection.manager, script_name)
-    if profile.id == "generic":
-        return run_script_command(pm_detection.manager, "build")
     return profile.default_command
 
 
 def _preferred_script(profile: FrameworkProfile, package_json: PackageJson) -> str | None:
-    if profile.id == "nuxt-generate" and package_json.script("generate") is not None:
-        return "generate"
     for script_name in ("build", "docs:build"):
         script = package_json.script(script_name)
         if script is not None and _script_matches_profile(profile, script):
             return script_name
     if profile.id in {"vitepress", "vuepress"} and package_json.script("docs:build") is not None:
         return "docs:build"
-    if profile.id == "generic" and package_json.script("build") is not None:
-        return "build"
     return None
 
 
 def _script_matches_profile(profile: FrameworkProfile, script: str) -> bool:
-    if profile.id == "generic":
-        return True
     commands = {
         *profile.script_markers,
         profile.default_command,
@@ -409,16 +374,31 @@ def _script_matches_profile(profile: FrameworkProfile, script: str) -> bool:
 
 def _select_image(
     profile: FrameworkProfile,
-    package_manager: PackageManager,
     node_selection: NodeSelection | None,
 ) -> str:
     if not profile.node_based:
         return "hugo:latest"
-    if package_manager == "bun":
-        return "bun:1"
     if node_selection is None:
         raise DetectionError("Node selection is required for Node-based framework profiles")
     return node_selection.image
+
+
+def _profile_output_dir(profile: FrameworkProfile, build_command: str) -> str | None:
+    """Resolve output paths for profiles whose CLI target changes the root."""
+
+    if profile.id == "vitepress" and _build_targets_docs(build_command):
+        return "docs/.vitepress/dist"
+    if profile.id == "vuepress" and _build_targets_docs(build_command):
+        return "docs/.vuepress/dist"
+    return profile.output_dir
+
+
+def _build_targets_docs(build_command: str) -> bool:
+    """Return whether a VitePress/VuePress command builds the docs subdirectory."""
+
+    return "docs:build" in build_command or bool(
+        re.search(r"(?:vitepress|vuepress)\s+build\s+docs(?:\s|$)", build_command)
+    )
 
 
 def _has_config_marker(root: Path, markers: tuple[str, ...]) -> bool:

@@ -149,14 +149,14 @@ exceptions with `from` unless suppression is intentional.
 
 - `contracts/openapi/build-engine.openapi.json` is generated from the
   control-plane checkout at `../coreapp/frontend/openapi.json`.
-- `contracts/protocol/wss-v1.json` locks WSS envelope/message names.
+- `contracts/protocol/wss-v2.json` locks WSS envelope/message names.
 - `contracts/image-manifest/manifest.schema.json` locks the builder image
   manifest schema.
 
 After control-plane contract changes, run:
 
 ```bash
-make contracts-sync
+BUILD_ENGINE_COREAPP_ROOT=/home/nerdv2/work/Mincemeat/coreapp-build-engine-v2 make contracts-sync
 make verify
 ```
 

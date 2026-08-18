@@ -38,47 +38,6 @@
         ],
         "type": "object"
       },
-      "BuildAttemptAckRequest": {
-        "properties": {
-          "error_class": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BuildErrorClass"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "error_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "error_message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "state": {
-            "$ref": "#/components/schemas/BuildJobStatus"
-          }
-        },
-        "required": [
-          "state"
-        ],
-        "type": "object"
-      },
       "BuildEngineAgentHealthResponse": {
         "properties": {
           "ok": {
@@ -108,11 +67,17 @@
           },
           "registration_token": {
             "type": "string"
+          },
+          "version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
           "registration_token",
           "name",
+          "version",
           "capabilities"
         ],
         "type": "object"
@@ -179,6 +144,21 @@
         ],
         "type": "object"
       },
+      "BuildEngineAttemptSecretsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "type": "object"
+      },
       "BuildEngineCacheResetRequest": {
         "properties": {
           "site_id": {
@@ -203,6 +183,13 @@
             ],
             "type": "string"
           },
+          "frameworks": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
           "image_manifest_version": {
             "type": "string"
           },
@@ -217,14 +204,25 @@
             "minimum": 1,
             "type": "integer"
           },
+          "network": {
+            "const": "unrestricted",
+            "type": "string"
+          },
           "os": {
             "examples": [
               "linux"
             ],
             "type": "string"
           },
+          "package_managers": {
+            "items": {
+              "$ref": "#/components/schemas/BuildPackageManager"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
           "proto_version": {
-            "minimum": 1,
+            "const": 2,
             "type": "integer"
           }
         },
@@ -234,7 +232,10 @@
           "max_concurrency",
           "images",
           "proto_version",
-          "image_manifest_version"
+          "image_manifest_version",
+          "frameworks",
+          "package_managers",
+          "network"
         ],
         "type": "object"
       },
@@ -245,7 +246,7 @@
             "type": "string"
           },
           "id": {
-            "description": "ULID message id",
+            "format": "uuid",
             "type": "string"
           },
           "payload": {
@@ -260,7 +261,7 @@
             "$ref": "#/components/schemas/BuildEngineCommandType"
           },
           "v": {
-            "const": 1,
+            "const": 2,
             "type": "integer"
           }
         },
@@ -277,42 +278,13 @@
       "BuildEngineCommandType": {
         "enum": [
           "job.assign",
-          "cancel",
+          "job.cancel",
           "cache.reset",
-          "drain"
+          "drain",
+          "ping"
         ],
         "title": "BuildEngineCommandType",
         "type": "string"
-      },
-      "BuildEngineHeartbeatRequest": {
-        "properties": {
-          "cache_size_bytes": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "disk_free_bytes": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "queue_depth": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "workers_busy": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "workers_total": {
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "workers_busy",
-          "workers_total",
-          "queue_depth"
-        ],
-        "type": "object"
       },
       "BuildEngineListResponse": {
         "properties": {
@@ -325,47 +297,6 @@
         },
         "required": [
           "items"
-        ],
-        "type": "object"
-      },
-      "BuildEngineMetricRollupRequest": {
-        "properties": {
-          "cache_hit_ratio": {
-            "type": "number"
-          },
-          "cache_size_bytes": {
-            "type": "integer"
-          },
-          "docker_errors_total": {
-            "type": "integer"
-          },
-          "jobs_completed_total": {
-            "type": "integer"
-          },
-          "jobs_running": {
-            "type": "integer"
-          },
-          "queue_depth": {
-            "type": "integer"
-          },
-          "recorded_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "uplink_reconnects_total": {
-            "type": "integer"
-          },
-          "workers_busy": {
-            "type": "integer"
-          },
-          "workers_total": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "workers_busy",
-          "workers_total",
-          "queue_depth"
         ],
         "type": "object"
       },
@@ -467,6 +398,7 @@
           "id",
           "name",
           "status",
+          "cancel_requested",
           "version",
           "proto_version",
           "image_manifest_version",
@@ -577,6 +509,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "cancel_requested": {
+            "type": "boolean"
+          },
           "engine_id": {
             "anyOf": [
               {
@@ -657,6 +592,7 @@
           "attempt_number",
           "engine_id",
           "status",
+          "cancel_requested",
           "last_seq",
           "assigned_at",
           "started_at",
@@ -892,9 +828,7 @@
       "BuildPackageManager": {
         "enum": [
           "npm",
-          "pnpm",
-          "yarn",
-          "bun"
+          "pnpm"
         ],
         "title": "BuildPackageManager",
         "type": "string"
@@ -1531,232 +1465,6 @@
         ]
       }
     },
-    "/api/v1/build-engines/agent/health": {
-      "get": {
-        "operationId": "get_build_engine_agent_health",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BuildEngineAgentHealthResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "build-engine-agent"
-        ]
-      }
-    },
-    "/api/v1/build-engines/agent/heartbeats": {
-      "post": {
-        "operationId": "record_build_engine_heartbeat",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BuildEngineHeartbeatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "description": "Accepted"
-          }
-        },
-        "tags": [
-          "build-engine-agent"
-        ]
-      }
-    },
-    "/api/v1/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/ack": {
-      "post": {
-        "operationId": "ack_build_job_attempt",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "attempt_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BuildAttemptAckRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BuildJobAttemptResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "build-engine-agent"
-        ]
-      }
-    },
-    "/api/v1/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/artifact-upload-url": {
-      "post": {
-        "operationId": "create_build_artifact_upload_url",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "attempt_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BuildArtifactUploadUrlRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BuildArtifactUploadUrlResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "build-engine-agent"
-        ]
-      }
-    },
-    "/api/v1/build-engines/agent/metrics": {
-      "post": {
-        "operationId": "record_build_engine_metrics",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BuildEngineMetricRollupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "description": "Accepted"
-          }
-        },
-        "tags": [
-          "build-engine-agent"
-        ]
-      }
-    },
-    "/api/v1/build-engines/agent/register": {
-      "post": {
-        "operationId": "register_build_engine_agent",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BuildEngineAgentRegisterRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BuildEngineAgentRegisterResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "build-engine-agent"
-        ]
-      }
-    },
-    "/api/v1/build-engines/agent/sessions": {
-      "post": {
-        "operationId": "create_build_engine_agent_session",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BuildEngineAgentSessionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BuildEngineAgentSessionResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "build-engine-agent"
-        ]
-      }
-    },
     "/api/v1/sites/{site_id}/build-cache/reset": {
       "post": {
         "operationId": "reset_site_build_cache",
@@ -1982,6 +1690,176 @@
         },
         "tags": [
           "site-build"
+        ]
+      }
+    },
+    "/api/v2/build-engines/agent/health": {
+      "get": {
+        "operationId": "get_build_engine_agent_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildEngineAgentHealthResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "build-engine-agent"
+        ]
+      }
+    },
+    "/api/v2/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/artifact-upload-url": {
+      "post": {
+        "operationId": "create_build_artifact_upload_url",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildArtifactUploadUrlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildArtifactUploadUrlResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "build-engine-agent"
+        ]
+      }
+    },
+    "/api/v2/build-engines/agent/jobs/{job_id}/attempts/{attempt_id}/secrets": {
+      "get": {
+        "operationId": "get_build_attempt_secrets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildEngineAttemptSecretsResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "build-engine-agent"
+        ]
+      }
+    },
+    "/api/v2/build-engines/agent/register": {
+      "post": {
+        "operationId": "register_build_engine_agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildEngineAgentRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildEngineAgentRegisterResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "build-engine-agent"
+        ]
+      }
+    },
+    "/api/v2/build-engines/agent/sessions": {
+      "post": {
+        "operationId": "create_build_engine_agent_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildEngineAgentSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildEngineAgentSessionResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "build-engine-agent"
         ]
       }
     }

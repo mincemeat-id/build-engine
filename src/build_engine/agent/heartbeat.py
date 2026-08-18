@@ -12,6 +12,10 @@ class HeartbeatSnapshot:
     queue_depth: int
     cache_size_bytes: int
     disk_free_bytes: int
+    jobs_running: int = 0
+    jobs_completed_total: int = 0
+    docker_errors_total: int = 0
+    uplink_reconnects_total: int = 0
 
     def to_payload(self) -> dict[str, int]:
         """Return the protocol payload."""

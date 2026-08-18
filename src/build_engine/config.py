@@ -1,8 +1,12 @@
 """Configuration loading for the build engine."""
 
+import grp
 import os
 import platform
+import pwd
+import tempfile
 import tomllib
+import uuid
 from collections.abc import Mapping
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
@@ -19,9 +23,9 @@ DEFAULT_STATE_DIR = Path("/var/lib/build-engine")
 # advertises an unreleased or stale manifest version.
 DEFAULT_IMAGE_MANIFEST_VERSION = "1.0.0"
 
-# V1 GA builder-image matrix. Aligned with
-# `manifest.json` and the design's framework matrix.
-DEFAULT_IMAGES: tuple[str, ...] = ("node:22", "bun:1", "hugo:latest", "zola:latest")
+# Production v2 builder matrix. The manifest is the source of truth for the
+# immutable references used by these logical image keys.
+DEFAULT_IMAGES: tuple[str, ...] = ("node:22", "hugo:latest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,10 +65,44 @@ class EngineConfig:
     state_dir: Path = DEFAULT_STATE_DIR
     image_manifest_version: str = DEFAULT_IMAGE_MANIFEST_VERSION
     images: tuple[str, ...] = DEFAULT_IMAGES
-    network_blocklist: tuple[str, ...] = ()
-    network_guard_enabled: bool = True
+    storage_origins: tuple[str, ...] = ()
+    lease_seconds: int = 120
+    outbox_max_bytes: int = 268_435_456
+    state_retention_days: int = 7
+    allow_local_source_urls: bool = False
     os: str = field(default_factory=lambda: platform.system().lower())
     arch: str = field(default_factory=lambda: _normalize_arch(platform.machine()))
+
+    def __post_init__(self) -> None:
+        """Reject invalid operational values before the service starts."""
+
+        if not 1 <= self.max_concurrency <= 16:
+            raise ValueError("max_concurrency must be between 1 and 16")
+        for name in (
+            "heartbeat_interval_seconds",
+            "build_timeout_seconds",
+            "sigterm_grace_seconds",
+            "artifact_max_bytes",
+            "cache_site_max_bytes",
+            "cache_ttl_days",
+            "lease_seconds",
+            "outbox_max_bytes",
+            "state_retention_days",
+        ):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        if self.container_cpus <= 0:
+            raise ValueError("container_cpus must be positive")
+        if not self.image_manifest_version:
+            raise ValueError("image_manifest_version must not be empty")
+        if not self.images:
+            raise ValueError("at least one builder image must be configured")
+        if any(not isinstance(origin, str) or not origin for origin in self.storage_origins):
+            raise ValueError("storage_origins must contain non-empty origins")
+        if self.backend_url is not None and not _is_secure_origin(self.backend_url):
+            raise ValueError("backend_url must use HTTPS")
+        if any(not _is_secure_origin(origin) for origin in self.storage_origins):
+            raise ValueError("storage_origins must use HTTPS")
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +149,10 @@ def load_config(
         if value is not None:
             values[key] = value
 
+    known_fields = {config_field.name for config_field in fields(EngineConfig)}
+    unknown_fields = sorted(set(values) - known_fields)
+    if unknown_fields:
+        raise ValueError("Unknown configuration keys: " + ", ".join(unknown_fields))
     values = _coerce_config_values(values)
 
     return EngineConfig(**values)
@@ -130,6 +172,10 @@ def load_credentials(path: Path | str) -> EngineCredentials:
     if missing:
         joined = ", ".join(missing)
         raise ValueError(f"Credentials file is missing required keys: {joined}")
+    try:
+        uuid.UUID(str(raw["engine_id"]))
+    except ValueError as exc:
+        raise ValueError("Credentials engine_id must be a UUID") from exc
     return EngineCredentials(
         engine_id=str(raw["engine_id"]),
         engine_secret=str(raw["engine_secret"]),
@@ -156,12 +202,31 @@ def write_credentials(path: Path | str, credentials: EngineCredentials) -> None:
             "",
         )
     )
-    destination.write_text(content)
-    destination.chmod(0o600)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+        dir=destination.parent,
+        text=True,
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _chown_service_file(temporary)
+        temporary.replace(destination)
+        destination.chmod(0o600)
+        _chown_service_file(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def config_capabilities(config: EngineConfig) -> dict[str, object]:
     """Return the registration capabilities payload expected by coreapp."""
+
+    from build_engine.detect.framework import SUPPORTED_FRAMEWORK_IDS
 
     return {
         "os": config.os,
@@ -170,6 +235,9 @@ def config_capabilities(config: EngineConfig) -> dict[str, object]:
         "images": list(config.images),
         "proto_version": PROTOCOL_VERSION,
         "image_manifest_version": config.image_manifest_version,
+        "frameworks": sorted(SUPPORTED_FRAMEWORK_IDS),
+        "package_managers": ["npm", "pnpm"],
+        "network": "unrestricted",
     }
 
 
@@ -191,12 +259,12 @@ def _coerce_config_values(values: dict[str, Any]) -> dict[str, Any]:
         coerced["images"] = tuple(str(item) for item in coerced["images"])
     elif isinstance(coerced.get("images"), str):
         coerced["images"] = _split_csv(str(coerced["images"]))
-    if isinstance(coerced.get("network_blocklist"), list):
-        coerced["network_blocklist"] = tuple(str(item) for item in coerced["network_blocklist"])
-    elif isinstance(coerced.get("network_blocklist"), str):
-        coerced["network_blocklist"] = _split_csv(str(coerced["network_blocklist"]))
-    if isinstance(coerced.get("network_guard_enabled"), str):
-        coerced["network_guard_enabled"] = _bool_value(str(coerced["network_guard_enabled"]))
+    if isinstance(coerced.get("storage_origins"), list):
+        coerced["storage_origins"] = tuple(str(item) for item in coerced["storage_origins"])
+    elif isinstance(coerced.get("storage_origins"), str):
+        coerced["storage_origins"] = _split_csv(str(coerced["storage_origins"]))
+    if isinstance(coerced.get("allow_local_source_urls"), str):
+        coerced["allow_local_source_urls"] = _bool_value(str(coerced["allow_local_source_urls"]))
     return coerced
 
 
@@ -225,13 +293,16 @@ def _coerce_env_value(key: str, value: str) -> object:
         "artifact_max_bytes",
         "cache_site_max_bytes",
         "cache_ttl_days",
+        "lease_seconds",
+        "outbox_max_bytes",
+        "state_retention_days",
     }:
         return int(value)
     if key == "container_cpus":
         return float(value)
-    if key == "network_guard_enabled":
+    if key == "allow_local_source_urls":
         return _bool_value(value)
-    if key in {"images", "network_blocklist"}:
+    if key in {"images", "storage_origins"}:
         return _split_csv(value)
     if key.endswith("_path") or key.endswith("_dir"):
         return Path(value)
@@ -250,6 +321,28 @@ def _toml_string(value: str) -> str:
 
 def _split_csv(value: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
+def _is_secure_origin(value: str) -> bool:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(value)
+    return parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def _chown_service_file(path: Path) -> None:
+    """Apply service-user ownership when the packaged account exists."""
+
+    try:
+        user = pwd.getpwnam("build-engine")
+        group = grp.getgrnam("build-engine")
+    except KeyError:
+        return
+    try:
+        os.chown(path, user.pw_uid, group.gr_gid)
+    except PermissionError:
+        if os.geteuid() == 0:
+            raise
 
 
 def _bool_value(value: str) -> bool:
